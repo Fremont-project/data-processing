@@ -22,4 +22,4 @@ You can check new Dropbox structure proposed [here](https://docs.google.com/docu
 - Do some changes
 - Create new pull request stating what are you trying to add/change or what impact your change will have (we'll try to provide some guidance with prepared issue and pull request templates).
 - Ping your colleagues to review your code or Jupyter notebook (not strictly needed, but helps tremendously to do the code review)
-- Ping @michaltakac to review your PR. It should be merged in under 24 hours if possible.
+- Ping [@michaltakac](https://github.com/michaltakac) to review your PR. It should be merged in under 24 hours if possible.
