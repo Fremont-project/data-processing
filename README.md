@@ -8,6 +8,15 @@ You can check new Dropbox structure proposed [here](https://docs.google.com/docu
 
 ### Working with data from Dropbox
 
+In your code, access the root path of local Dropbox folder like this:
+
+```python
+from fremontdropbox import get_dropbox_location
+
+get_dropbox_location()
+# "/path/to/Fremont Dropbox"
+```
+
 - Most of the code operating on the data will be kept in Jupyter notebooks.
 - Paths to the files or datasets should be relative so anybody can run `jupyter notebook` from any folder and the code should be able to find all files that are being used.
 - `Raw data` folder should not be directly accessed or used as an output destination.
