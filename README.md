@@ -6,6 +6,18 @@ Dropbox is currently being restructured (new folder structure is being introduce
 
 You can check new Dropbox structure proposed [here](https://docs.google.com/document/d/13c4xRLdxLRR_g7pWuXtTVXjEpxshui2kZBI-i5DG8lo/edit).
 
+### Working with Python
+
+- Install [Anaconda](https://www.anaconda.com/distribution/) (the Python 3.7 version)
+- Open Anaconda Navigator and install Jupyter Notebook
+- Install additional Python packages we are using
+
+```bash
+conda install geopandas
+```
+
+- Run `jupyter notebook` from command line (inside the folder that you cloned this repository into). We recommend using `get_dropbox_location` function that is provided in `fremontdropbox.py` (guide how to do that below).
+
 ### Working with data from Dropbox
 
 In your code, access the root path of local Dropbox folder like this:
