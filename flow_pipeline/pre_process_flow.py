@@ -79,22 +79,7 @@ def parse_excel_2013(dfs):
 def parse_excel_2015(dfs):
     # for ease of parsing
     #parsing day1
-
     Input1 = process_input(dfs, 1)
-    # Input1 = dfs['ew Day 1']
-    # date1 = Input1.columns[::3][1].strftime("%Y-%m-%d")
-    # Input1 = Input1.rename(columns={'Volumes for:': 'Time', 'Unnamed: 0': 'Date',
-    #                                 Input1.columns[3]: 'morning_EB', Input1.columns[4]: 'afternoon_EB', Input1.columns[7]: 'morning_WB', Input1.columns[8]: 'afternoon_WB'})
-    # morning1 = Input1[['Date', 'Time', 'morning_EB', 'morning_WB']]
-    # morning1 = morning1.drop(morning1.index[[0, 1, 2]])
-    # afternoon1 = Input1[['Date', 'Time', 'afternoon_EB', 'afternoon_WB']]
-    # afternoon1 = afternoon1.drop(afternoon1.index[[0, 1, 2]])
-    # morning1 = morning1.rename(columns={'morning_EB':'EB', 'morning_WB':'WB'})
-    # afternoon1 = afternoon1.rename(columns={'afternoon_EB':'EB', 'afternoon_WB':'WB'})
-    # morning1 = morning1.append(afternoon1, ignore_index=True)
-    # Input1 = morning1
-    # Input1['Date'] = date1
-
     #parsing day2
     Input2 = process_input(dfs, 2)
     #parsing day3
@@ -234,6 +219,8 @@ def process_doc_data(year):
     in_folder = Processed_dir + '/' + '%d doc' % year
     if not os.path.exists(in_folder):
         os.makedirs(in_folder)
+    if not os.path.exists(out_folder):
+        os.makedirs(out_folder)
     for file_name in os.listdir(in_folder):
         if is_doc_file(file_name):
             print("processing file:", file_name)
@@ -297,13 +284,14 @@ def create_directory(path, name):
 def get_geo_data(year):
     print('Obtaining geo data from %d ADT files' % year)
     # input folder and files
-    in_folder = "%d ADT Data/" % year
+
+    in_folder = ADT_dir + "/" + "%d ADT Data/" % year
     input_files = os.listdir(in_folder)
 
     # iterate over the files to obtain main road addresses
     cache_main_roads = []
     for file_name in input_files:
-        if is_valid_file(file_name):
+        if is_valid_file(file_name) and is_excel_file(file_name):
             print("processing:", file_name)
             main_road_info = None
             if year == 2013:
@@ -316,13 +304,13 @@ def get_geo_data(year):
                 main_road_info = get_main_road_info_2019(file_name)
             else:
                 raise (Exception('Unable to get main road info for file: %s' % file_name))
-
             print('main road info:', main_road_info)
             cache_main_roads.append(main_road_info)
 
     # get geo coordinates using google API and cache_main_roads
     # write the results in the csv file, 'year_info_coor.csv'
-    coordinate_file = open('%d_info_coor.csv' % year, 'w')
+    fname = Processed_dir + "/" + '%d_info_coor.csv' % year
+    coordinate_file = open(fname, 'w')
     coordinate_file.write("Name,City,Main road,Cross road,Start lat,Start lng,End lat,End lng\n")
     for main_road_info in cache_main_roads:
         file_name, city, main_road, cross_road, cross1, cross2 = main_road_info
@@ -347,6 +335,7 @@ Gets main road info from inside the file
 """
 
 def get_main_road_info_2013(in_folder, file_name):
+    print(file_name)
     if is_excel_file(file_name):
         # read excel data into dataframe
         xls_file = pd.ExcelFile(in_folder + file_name)
