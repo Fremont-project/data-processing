@@ -17,7 +17,7 @@ The Streelight SR262 link analysis provides the demand between external endpoint
 
 The external endpoints in the raw data doesn't match with our external centroids (nodes outside the highway). So the first step is to label the external centroids in the pdf for future analysis. As is shown in the figure below, there're 6 external centroids we can use, with external centroid ID 4, 13, 20, 21, 22, 23. 
 <p align="center">
-  <img src="https://github.com/Fremont-project/data-processing/blob/master/pipeline/demand/external-to-external%20demand%20inference/labeled_centriods.jpg" width="75%" height="75%">
+  <img src="https://github.com/Fremont-project/data-processing/blob/master/pipeline/demand/labeled_centriods.jpg" width="75%" height="75%">
 </p>
 
 2. Infer the ext_ext_demand
