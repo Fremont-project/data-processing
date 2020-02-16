@@ -15,6 +15,7 @@ The external centroid in the raw data doesn't match with our external centroid. 
 </p>
 2. Infer the ext_ext_demand
 Take the figure above as an example. The origin node is 1 and 2-7 are destination nodes. Since node 1 is the only origin node, we assume that the external demand between node 1 (External Centroid 13) and External Centroid 4 is 810 (in AM) and 720 (in PM). Then we can infer other ext_to_ext demand in a similar way.
+
 3. Record the ext_to_ext demand in PM in ext_ext_OD_PM.csv.
 Manually record the demand inferred from step 2 and save as ext_ext_OD_PM.csv.
 
