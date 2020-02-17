@@ -159,7 +159,9 @@ def parse_excel_2013(dfs):
     return tmp_df_2
 
 def parse_excel_2015(dfs):
-    """ To do """
+    """
+    ***2015 Excel files***. The files come from Kimley Horn. Every excel file has 7 relevant sheets including the hidden sheets. They are ['Data', 'ns Day 1', 'ns Day 2', 'ns Day 3', 'ew Day 1', 'ew Day 2', 'ew Day 3']. Here, we are only going to process the 'Data' sheet.
+    """
     tmp_df = dfs['Data']
     tmp_df.to_csv("test_tmp.csv")
 

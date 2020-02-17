@@ -3,7 +3,8 @@ import webbrowser
 import time
 import requests
 from pathlib import Path
-
+import pandas as pd
+import datetime
 
 """
 find relavant directories here
@@ -131,6 +132,25 @@ def download(year, detector_ids, PeMS_dir):
             os.makedirs(expected_dir)
         os.rename(local_download + '/pems_output.xlsx', expected_dir + '/' + str(i) + "_" + str(year) + ".xlsx")
 
+def PeMS_tester(test_year, PeMS_dir, debug=False):
+    "This test confirmes that the PeMS data downloaded are during three days and for 5min"
+    year_PeMS_dir =  PeMS_dir + '/PeMS_' + str(test_year)
+    onlyfiles = [f for f in os.listdir(year_PeMS_dir) if os.path.isfile(os.path.join(year_PeMS_dir, f))]
+    test = True
+    for file in onlyfiles:
+        if 'xlsx' in file:
+            xl = pd.ExcelFile(year_PeMS_dir + "/" + onlyfiles[0])
+            df = xl.parse("PeMS Report Description")
+            start_time = df.iloc[13, 2]
+            end_time = df.iloc[14, 2]
+            duration = (datetime.datetime.strptime(df.iloc[14, 2], "%m/%d/%Y %H:%M:%S") - datetime.datetime.strptime(df.iloc[13, 2], "%m/%d/%Y %H:%M:%S")).days + 1
+            if test and file != onlyfiles[0]:
+                test = test and duration == 3 and (start_time==start_time_tmp) and (end_time==end_time_tmp) and df.iloc[16, 2] == '5min'
+            start_time_tmp = df.iloc[13, 2]
+            end_time_tmp = df.iloc[14, 2]
+    assert test
+    if debug:
+        print("PeMS during " + str(start_time) + "-" + str(end_time))
 
 # local testing
 if __name__ == '__main__':
