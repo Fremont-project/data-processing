@@ -73,7 +73,7 @@ Note no doc files for 2013.
 """
 def parse_adt_as_file(file_path, year, out_folder):
     """ 
-        To do
+        ***2017 and 2019 PDF files*** are structured with a header and 3 tables of traffic flow data (one table per day of subsequent days). The header gives the site location and other miscellaneous meta data. Each table is titled by the date and timestep (15 minutes) of the recording. A table is organized by columns each representing the hour of day (0 - 23). Hence for a given column, the first row gives the hour of the day, the second gives the total flow for the hour, and the third to last row (4 rows total) gives traffic flow per 15 minute timestep for the hour.
     """
     file_name = file_path.split('/')[-1]
     out_file = open(out_folder + '/' + remove_ext(file_name) + '.csv', 'w')
@@ -143,7 +143,9 @@ def parse_adt_as_dataframe(file_path, year):
         return parse_excel_2019(dfs)
 
 def parse_excel_2013(dfs):
-    """ To do """
+    """ 
+    ***2013 Excel files*** are structured in data sheets. The first data sheet "Summary" contains the main road, cross streets, city information and the start date of the recording. It also summarizes the data contained in all other sheets into a bar plot of traffic flow vs time of day bins (i.e Tuesday AM, Wednesday PM) for different flow directions and into a line plot of traffic flow vs. hour of day for different days of the week. The sheets that follow are named "D1", "D2",..."DN" where N denotes the N'th day since the start date. These sheets are structured into two tables, AM counts and PM counts. Each table row gives the traffic flow per timestep of 15 minutes. The first column is the time of day in hh:mm format follow by direction columns of traffic flow (NB, SB, EB, WB). 
+    """
     tmp_df = dfs['Input']
     tmp_df.to_csv("test_tmp.csv")
 
@@ -168,7 +170,9 @@ def parse_excel_2015(dfs):
 
 
 def parse_excel_2017(dfs):
-    """ To do """
+    """ 
+    ***2017 Excel files*** are structured in one data sheet giving a header and a table for traffic flow. The header gives the start date and time of the recording, site code and sensor location, and the table gives traffic flow per a 15 minute timestep. The table's first two columns give the date and time and the following columns give traffic flow per directions. 
+    """
     tmp_df = dfs['Sheet1']
     tmp_df.to_csv("test_tmp.csv")
 
@@ -180,7 +184,9 @@ def parse_excel_2017(dfs):
 
 
 def parse_excel_2019(dfs):
-    """ To do """
+    """ 
+    ***2019 Excel files*** have similar structure as those of 2013. The data is organized in two types of sheet, "Day N" and "GR N" sheets. The "Day N" sheets give traffic flow data in the same fashion as the "DN" sheets of 2013 excel files. The day of recording can be found in the header of the two tables. The "GR N" sheets plot the corresponding flow data of the "Day N" sheets. A line plot of flow vs. hour of day for different flow directions is given.
+    """
     # parse the excel sheets and concatenate their data
     Input1 = parse_sheet_helper_2019('Day 1', dfs)
     Input2 = parse_sheet_helper_2019('Day 2', dfs)
@@ -260,24 +266,37 @@ def create_directory(path, name):
     if not os.path.isdir(dir):
         os.mkdir(dir)
 
+##############################
+############ HERE ############
+##############################
 
-
-def get_geo_data(year):
-    """ To do """
-    print('Obtaining geo data from %d ADT files' % year)
+def get_geo_data(year, Input_dir, Processed_dir):
+    """ To do + add the doc files"""
+    if debug:
+        print('Obtaining geo data from %d ADT files' % year)
     # input folder and files
+    
+    input_file_doc = []
+    if year in [2013, 2017, 2019]:
+        input_folder_excel = Input_dir + "/" + "%d ADT Data/" % year
+        input_files_excel = os.listdir()
+    if year in [2017, 2019]:
+        input_folder_doc = Input_dir + "/" + "%d doc/" % year
+        input_file_doc = os.listdir(input_folder_doc)
+    if year==2015:
+        input_folder_excel = Input_dir + "/Raw Data/"
 
-    in_folder = ADT_dir + "/" + "%d ADT Data/" % year
-    input_files = os.listdir(in_folder)
+    input_files_excel = os.listdir(input_folder_excel)
 
     # iterate over the files to obtain main road addresses
     cache_main_roads = []
-    for file_name in input_files:
+    for file_name in input_files_excel:
         if is_valid_file(file_name) and is_excel_file(file_name):
-            print("processing:", file_name)
+            if debug:
+                print("processing:", file_name)
             main_road_info = None
             if year == 2013:
-                main_road_info = get_main_road_info_2013(in_folder, file_name)
+                main_road_info = get_main_road_info_2013(input_folder_excel, file_name)
             elif year == 2015:
                 main_road_info = get_main_road_info_2015(file_name)
             elif year == 2017:
@@ -286,7 +305,8 @@ def get_geo_data(year):
                 main_road_info = get_main_road_info_2019(file_name)
             else:
                 raise (Exception('Unable to get main road info for file: %s' % file_name))
-            print('main road info:', main_road_info)
+            if debug:
+                print('main road info:', main_road_info)
             cache_main_roads.append(main_road_info)
 
     # get geo coordinates using google API and cache_main_roads
@@ -309,7 +329,8 @@ def get_geo_data(year):
             coordinate_file.write(line)
         else:
             raise (Exception('Unable to get coordinates for main road of file %s' % file_name))
-    print(coordinate_file)
+    if debug:
+        print(coordinate_file)
     coordinate_file.close()
 
 """
@@ -318,7 +339,8 @@ Gets main road info from inside the file
 
 def get_main_road_info_2013(in_folder, file_name):
     """ To do """
-    print(file_name)
+    if debug:
+        print(file_name)
     if is_excel_file(file_name):
         # read excel data into dataframe
         xls_file = pd.ExcelFile(in_folder + file_name)
@@ -363,7 +385,8 @@ def get_main_road_info_2015(file_name):
     """
 
     if is_excel_file(file_name):
-        print(file_name)
+        if debug:
+            print(file_name)
         main_road = file_name.split('betw.')[0].strip()
         cross = file_name.split('betw.')[1].strip()[:-4]
         cross1 = cross.split('and')[0].strip()
@@ -439,7 +462,8 @@ def get_coords_from_address(address):
         'address': address,
         'key': API_KEY
     }
-    print('address: ', address)
+    if debug:
+        print('address: ', address)
     request = requests.get(GOOGLE_MAPS_URL, params=payload).json()
     results = request['results']
 
@@ -450,7 +474,8 @@ def get_coords_from_address(address):
         answer = results[0]
         lat = answer.get('geometry').get('location').get('lat')
         lng = answer.get('geometry').get('location').get('lng')
-    print('address w coord lat, lng', address, str(lat), str(lng))
+    if debug:
+        print('address w coord lat, lng', address, str(lat), str(lng))
     return lat, lng
 
 
