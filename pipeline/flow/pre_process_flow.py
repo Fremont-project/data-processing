@@ -25,7 +25,7 @@ def process_adt_data(year, Processed_dir, Input_dir):
     The function has output:
         - CSV files located in the Processed_dir/Year_processed/ folder where Year=2017 or 2019
 
-    For function to work:
+    For the function to work:
         - Files should be located in 
             1. Input_dir/Year\ EXT/ folder if Year=2013, 2017 or 2019 where:
                 a. Year=2013, 2017 or 2019 if Ext=ADT Data 
@@ -75,6 +75,8 @@ def parse_adt_as_file(file_path, year, out_folder):
     """ 
         ***2017 and 2019 PDF files*** are structured with a header and 3 tables of traffic flow data (one table per day of subsequent days). The header gives the site location and other miscellaneous meta data. Each table is titled by the date and timestep (15 minutes) of the recording. A table is organized by columns each representing the hour of day (0 - 23). Hence for a given column, the first row gives the hour of the day, the second gives the total flow for the hour, and the third to last row (4 rows total) gives traffic flow per 15 minute timestep for the hour.
     """
+    if debug:
+        print(file_path)
     file_name = file_path.split('/')[-1]
     out_file = open(out_folder + '/' + remove_ext(file_name) + '.csv', 'w')
     out_file.write("Day,Time,Count\n")
@@ -271,7 +273,26 @@ def create_directory(path, name):
 ##############################
 
 def get_geo_data(year, Input_dir, Processed_dir):
-    """ To do + add the doc files"""
+    """
+    This function iterates over the ADT files and obtains the adresses of the detectors to then use with Google API to obtain latitude and longitude coordinates.
+    
+    This function has input:
+        - Year takes values 2013, 2015, 2017, 2019
+        - Processed_dir: path to the output
+        - Input_dir: path to the inputs
+
+    This function has output:
+        - CSV file "year_info_coor.csv" containing the coordinates of detectors and located in the Processed_dir/Year_processed/ folder where Year=2017 or 2019
+
+    For the function to work:
+        - Files should be located in 
+            1. Input_dir/Year\ EXT/ folder if Year=2013, 2017 or 2019 where:
+                a. Year=2013, 2017 or 2019 if Ext=ADT Data 
+                b. Year=2017 or 2019 if Ext=doc for 2017 and 2019
+            2. Input_dir/Raw\ data/ folder if Year=2015 
+
+    + add the doc files
+    """
     if debug:
         print('Obtaining geo data from %d ADT files' % year)
     # input folder and files
