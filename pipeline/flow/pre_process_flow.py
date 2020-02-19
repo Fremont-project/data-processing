@@ -4,11 +4,13 @@ import requests
 import textract
 import numpy as np
 from pathlib import Path
+import math
+from datetime import datetime
 
 API_KEY = "AIzaSyB8rJhDsfwvIod9jVTfFm1Dtv2eO4QWqxQ"
 GOOGLE_MAPS_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
-
+#MONTH = {'January': '01', 'Febuary'}
 debug = False
 """
 New generic method to process ADT data into csv files
@@ -32,7 +34,6 @@ def process_adt_data(year, Processed_dir, Input_dir):
                 b. Year=2017 or 2019 if Ext=doc for 2017 and 2019
             2. Input_dir/Raw\ data/ folder if Year=2015
     """
-
     output_folder = Processed_dir + "/" + "%d processed/" % year
     if not os.path.isdir(Processed_dir):
         os.mkdir(Processed_dir)
@@ -46,6 +47,7 @@ def process_adt_data(year, Processed_dir, Input_dir):
     if year in [2017, 2019]:
         input_folder_doc = Input_dir + "/" + "%d doc/" % year
         input_file_doc = os.listdir(input_folder_doc)
+
     if year==2015:
         input_folder_excel = Input_dir + "/Raw Data/"
 
@@ -55,8 +57,10 @@ def process_adt_data(year, Processed_dir, Input_dir):
     for file_name in input_files_excel:
         if is_excel_file(file_name):
             tmp_df = parse_adt_as_dataframe(input_folder_excel + file_name, year)
+
             output_name = output_folder + os.path.splitext(file_name)[0] + ".csv"
             if debug:
+                print(output_folder)
                 print(output_name)
             tmp_df.to_csv(output_name)
 
@@ -65,26 +69,37 @@ def process_adt_data(year, Processed_dir, Input_dir):
         if is_doc_file(file_name):
             tmp_df = parse_adt_as_file(input_folder_doc + file_name, year, output_folder)
 
-"""
-Process Doc files
-Years 2017 and 2019 DOC files have the same structure hence we can reuse this code.
-Structure refers to data organized in 3 tables split by *
-Note no doc files for 2013.
-"""
+
+def compare(s, t):
+    return Counter(s) == Counter(t)
+
+
 def parse_adt_as_file(file_path, year, out_folder):
     """ 
-        ***2017 and 2019 PDF files*** are structured with a header and 3 tables of traffic flow data (one table per day of subsequent days). The header gives the site location and other miscellaneous meta data. Each table is titled by the date and timestep (15 minutes) of the recording. A table is organized by columns each representing the hour of day (0 - 23). Hence for a given column, the first row gives the hour of the day, the second gives the total flow for the hour, and the third to last row (4 rows total) gives traffic flow per 15 minute timestep for the hour.
+    Process Doc files
+
+    ***2017 and 2019 PDF files*** are structured with a header and 3 tables of traffic flow data (one table per day of subsequent days). 
+    The header gives the site location and other miscellaneous meta data. Each table is titled by the date and timestep (15 minutes) of 
+    the recording. A table is organized by columns each representing the hour of day (0 - 23). Hence for a given column, the first row 
+    gives the hour of the day, the second gives the total flow for the hour, and the third to last row (4 rows total) gives traffic flow per
+     15 minute timestep for the hour.
+
+    
+    Years 2017 and 2019 files have the same structure hence we can reuse this code.
+    Structure refers to data organized in 3 tables split by *
+    Note no doc files for 2013.
     """
     if debug:
         print(file_path)
     file_name = file_path.split('/')[-1]
     out_file = open(out_folder + '/' + remove_ext(file_name) + '.csv', 'w')
-    out_file.write("Day,Time,Count\n")
+    out_file.write("Date,Count\n")
 
     # data is structured in 3 tables split by *
     text = textract.process(file_path)
     text = str(text).replace('\\n', ' ')
     data = text.split('*')
+    interpreted_tables = {}
     for table in data[1:]:
         # parsing data block for day d
         array = table.split('|')
@@ -105,6 +120,7 @@ def parse_adt_as_file(file_path, year, out_folder):
                 print(data_row)
                 print(len(data_row))
             table_tmp[i] = np.array(data_row)
+        interpreted_tables[table] = table_tmp
             # print("data_row", data_row)
 
         analysis = array[j + 6 * 26]  # some analysis, not useful for now
@@ -121,8 +137,53 @@ def parse_adt_as_file(file_path, year, out_folder):
                 day = info_day[0] + " - " + info_day[1] + " - " + info_day[2]
                 time = hr + ":" + str(j * 15)
                 count = str(table_tmp[2 + j][hr_index])
-                out_file.write(day + "," + time + "," + count + "\n")
+                #month = info_day[1].split(" ")[0]
+                date_time = datetime.strptime(info_day[1] + " "  + str(year) + " " + time, " %B %d %Y %H:%M")
+                Date = date_time.strftime("%Y-%m-%d %H:%M:%S") 
+                out_file.write(Date + "," + count + "\n")
+
+        # check eligibility of the doc files.
+        curr_table = table_tmp
+        num_rows = len(curr_table)
+        for i in range(len(curr_table[0])):
+            expected_sum = curr_table[1]
+            actual_sum = []
+            for j in range(2, num_rows):
+                if actual_sum == []:
+                    actual_sum = curr_table[j]
+                else:
+                    actual_sum = [sum(x) for x in zip(actual_sum, curr_table[j])]
+            for i in range(len(actual_sum)):
+                #there are actually many tiny errors in the table set, therefore, I set a boundary of 2. 
+                assert abs(actual_sum[i] - expected_sum[i]) <=2 
+        
+        expected_total_sum = sum(expected_sum)
+        real_total_sum = int(info_day[2].split("=")[1])
+        #set the boundary for the test
+        if debug == True:
+            print("expected_sum" + str(expected_total_sum))
+            print("real_total_sum " + str(real_total_sum))
+        assert abs(expected_total_sum - real_total_sum) <= 15
     out_file.close()
+    
+    # for table in data[1:]:
+    #     curr_table = interpreted_tables[table]
+    #     num_rows = len(curr_table)
+    #     for i in range(len(curr_table[0])):
+    #         expected_sum = curr_table[1]
+    #         actual_sum = []
+    #         for j in range(2, num_rows):
+    #             if actual_sum == []:
+    #                 actual_sum = curr_table[j]
+    #             else:
+    #                 actual_sum = [sum(x) for x in zip(actual_sum, curr_table[j])]
+    #         for i in range(len(actual_sum)):
+    #             
+    #             assert abs(actual_sum[i] - expected_sum[i]) <=2 
+    #     expected_entire_sum =  
+
+
+
 
 
 def parse_adt_as_dataframe(file_path, year):
@@ -155,12 +216,18 @@ def parse_excel_2013(dfs):
     tmp_df_2 = pd.read_csv("test_tmp.csv", skiprows=4)
     os.remove("test_tmp.csv")
     tmp_df_2 = tmp_df_2[['Unnamed: 1', 'TIME', 'NB', 'SB', 'EB', 'WB']]
-    tmp_df_2 = tmp_df_2.rename(columns={'Unnamed: 1': 'Date'})
+    tmp_df_2['Date'] = tmp_df_2['Unnamed: 1'].astype(str) + ' ' + tmp_df_2['TIME']
+    tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB', 'EB', 'WB']]
+    if math.isnan(tmp_df_2['NB'][4]):
+        tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
+    else:
+        tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
     return tmp_df_2
 
 def parse_excel_2015(dfs):
     """
-    ***2015 Excel files***. The files come from Kimley Horn. Every excel file has 7 relevant sheets including the hidden sheets. They are ['Data', 'ns Day 1', 'ns Day 2', 'ns Day 3', 'ew Day 1', 'ew Day 2', 'ew Day 3']. Here, we are only going to process the 'Data' sheet.
+    ***2015 Excel files***. The files come from Kimley Horn. Every excel file has 7 relevant sheets including the hidden sheets. 
+    They are ['Data', 'ns Day 1', 'ns Day 2', 'ns Day 3', 'ew Day 1', 'ew Day 2', 'ew Day 3']. Here, we are only going to process the 'Data' sheet.
     """
     tmp_df = dfs['Data']
     tmp_df.to_csv("test_tmp.csv")
@@ -170,12 +237,19 @@ def parse_excel_2015(dfs):
     os.remove("test_tmp.csv")
     tmp_df_2 = tmp_df_2[['Unnamed: 1', 'Northbound', 'Southbound', 'Eastbound', 'Westbound']]
     tmp_df_2 = tmp_df_2.rename(columns={'Unnamed: 1': 'Date', 'Northbound': 'NB', 'Southbound': 'SB', 'Eastbound': 'EB', 'Westbound': "WB"})
+    if math.isnan(tmp_df_2['NB'][4]):
+        tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
+    else:
+        tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
+
     return tmp_df_2
 
 
 def parse_excel_2017(dfs):
     """ 
-    ***2017 Excel files*** are structured in one data sheet giving a header and a table for traffic flow. The header gives the start date and time of the recording, site code and sensor location, and the table gives traffic flow per a 15 minute timestep. The table's first two columns give the date and time and the following columns give traffic flow per directions. 
+    ***2017 Excel files*** are structured in one data sheet giving a header and a table for traffic flow. The header gives the start date and time of the recording, 
+    site code and sensor location, and the table gives traffic flow per a 15 minute timestep. The table's first two columns give the date and time and the following 
+    columns give traffic flow per directions. 
     """
     tmp_df = dfs['Sheet1']
     tmp_df.to_csv("test_tmp.csv")
@@ -184,8 +258,12 @@ def parse_excel_2017(dfs):
     tmp_df_2 = pd.read_csv("test_tmp.csv", skiprows=6)
     os.remove("test_tmp.csv")
     tmp_df_2 = tmp_df_2.drop(['5'], axis=1)
+    tmp_df_2 = tmp_df_2.rename(columns={'Date': 'date'})
+    tmp_df_2['Date'] = tmp_df_2['date'].apply(lambda x: x.split(" ")[0]) + ' ' + tmp_df_2['Time']
+    # tmp_df_2 = tmp_df_2.drop('data', 1)
+    cols = list(tmp_df_2.columns.values)
+    tmp_df_2 = tmp_df_2[[cols[-1], cols[2], cols[3]]]
     return tmp_df_2
-
 
 def parse_excel_2019(dfs):
     """ 
@@ -201,10 +279,19 @@ def parse_excel_2019(dfs):
     # rename columns accordingly
     # (matching was done visually printing the data frames and matching to xls data)
     # print(Input1)
-    tmp_df_2 = tmp_df_2.rename(columns={'date': 'Date', 'Unnamed: 25': 'Time',
+    tmp_df_2 = tmp_df_2.rename(columns={'Unnamed: 25': 'time',
                                     'Unnamed: 26': 'NB', 'Unnamed: 27': 'SB',
                                     'Unnamed: 28': 'EB', 'Unnamed: 29': 'WB'})
-    return Input1
+
+    tmp_df_2['Date'] = tmp_df_2['date'].astype(str) + ' ' + tmp_df_2['time'].astype(str) 
+
+    tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB', 'EB', 'WB']]
+
+    if math.isnan(tmp_df_2['NB'][4]):
+        tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
+    else:
+        tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
+    return tmp_df_2
 
 
 def parse_sheet_helper_2019(name, dfs):
@@ -306,12 +393,14 @@ def get_geo_data(year, Input_dir, Processed_dir):
     if year in [2017, 2019]:
         input_folder_doc = Input_dir + "/" + "%d doc/" % year
         input_file_doc = os.listdir(input_folder_doc)
+        # print("the doc files")
+        # print(input_file_doc)
     if year==2015:
         input_folder_excel = Input_dir + "/Raw Data/"
 
     input_files_excel = os.listdir(input_folder_excel)
 
-    # iterate over the files to obtain main road addresses
+    # iterate over the excel files to obtain main road addresses
     cache_main_roads = []
     for file_name in input_files_excel:
         if is_valid_file(file_name) and is_excel_file(file_name):
@@ -331,7 +420,24 @@ def get_geo_data(year, Input_dir, Processed_dir):
             if debug:
                 print('main road info:', main_road_info)
             cache_main_roads.append(main_road_info)
-
+    
+    # iterate over the doc files to obtain main road addresses
+    if year in [2017, 2019]:
+        for file_name in input_file_doc:
+            if is_valid_file(file_name) and is_doc_file(file_name):
+                if debug:
+                    print("processing:", file_name)
+                main_road_info = None
+                if year == 2017:
+                    main_road_info = get_main_road_info_2017(file_name)
+                elif year == 2019:
+                    main_road_info = get_main_road_info_2019(file_name)
+                else:
+                    raise (Exception('Unable to get main road info for file: %s' % file_name))
+                if debug:
+                    print('main road info:', main_road_info)
+                cache_main_roads.append(main_road_info)
+            
     # get geo coordinates using google API and cache_main_roads
     # write the results in the csv file, 'year_info_coor.csv'
     fname = Processed_dir + "/" + '%d_info_coor.csv' % year
@@ -419,16 +525,16 @@ def get_main_road_info_2015(file_name):
         return main_road_info
 
 
-"""
-Get 2017 main road info from file name
-input: file_name, examples below 
-file_name = mission blvd BT driscoll rd AND I 680 NB
-file_name = mission blvd S OF washington blvd signal
-output = (file_name, city, main_road, cross_road, cross1, cross2)
-"""
-
 def get_main_road_info_2017(file_name):
-    """ To do """
+
+    """
+    Get 2017 main road info from file name
+    input: file_name, examples below 
+    file_name = mission blvd BT driscoll rd AND I 680 NB
+    file_name = mission blvd S OF washington blvd signal
+    output = (file_name, city, main_road, cross_road, cross1, cross2)
+    """
+
     name = remove_ext(file_name).title()
     city = 'Fremont'
     main_road_info = None
@@ -454,16 +560,17 @@ def get_main_road_info_2017(file_name):
 
     return main_road_info
 
-"""
-Get 2019 main road info from file name
-input: file_name, examples below 
-file_name = Driscoll Rd Bet. Mission Blvd & Paseo Padre Pkwy
-file_name = AUTO MALL PKWY BT FREMONT BLVD AND I-680 EB
-output = (file_name, city, main_road, cross_road, cross1, cross2)
-"""
 
 def get_main_road_info_2019(file_name):
-    """ To do """
+
+    """
+    Get 2019 main road info from file name
+    input: file_name, examples below 
+    file_name = Driscoll Rd Bet. Mission Blvd & Paseo Padre Pkwy
+    file_name = AUTO MALL PKWY BT FREMONT BLVD AND I-680 EB
+    output = (file_name, city, main_road, cross_road, cross1, cross2)
+    """
+
     name = remove_ext(file_name).title()
     city = 'Fremont'
 
