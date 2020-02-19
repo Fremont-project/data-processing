@@ -67,6 +67,7 @@ def parse_2015(line, w):
         day = data[col[1]][0]
         direction1 = data[col[3]].to_numpy()[:data[col[3]].count()]
         direction2 = data[col[4]].to_numpy()[:data[col[4]].count()]
+        
         w.write("\n" + str(year) + "," + title + "," + id_flow + "," + col[3] + "," + day)
         for i in direction1:
             w.write("," + str(((int)(i))))
