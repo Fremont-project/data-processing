@@ -12,8 +12,6 @@ Processed_dir = dropbox_dir + '/Private Structured data collection/Data processi
 #directory to year reformat
 City_dir = Processed_dir + "/" + "City"
 
-ERRONEOUS_FILES = ['DURHAM RD BT I-680 AND MISSION BLVD EB', 'MISSION BLVD BT WASHINGTON BLVD AND PINES ST SB']
-
 def parse_2013(line, w):
     year = 2013
     splitted = line.split(",")

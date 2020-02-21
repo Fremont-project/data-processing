@@ -6,6 +6,8 @@ import numpy as np
 from pathlib import Path
 import math
 from datetime import datetime
+import glob
+
 
 API_KEY = "AIzaSyB8rJhDsfwvIod9jVTfFm1Dtv2eO4QWqxQ"
 GOOGLE_MAPS_URL = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -34,6 +36,7 @@ def process_adt_data(year, Processed_dir, Input_dir):
                 b. Year=2017 or 2019 if Ext=doc for 2017 and 2019
             2. Input_dir/Raw\ data/ folder if Year=2015
     """
+
     output_folder = Processed_dir + "/" + "%d processed/" % year
     if not os.path.isdir(Processed_dir):
         os.mkdir(Processed_dir)
@@ -57,7 +60,6 @@ def process_adt_data(year, Processed_dir, Input_dir):
     for file_name in input_files_excel:
         if is_excel_file(file_name):
             tmp_df = parse_adt_as_dataframe(input_folder_excel + file_name, year)
-
             output_name = output_folder + os.path.splitext(file_name)[0] + ".csv"
             if debug:
                 print(output_folder)
@@ -70,8 +72,79 @@ def process_adt_data(year, Processed_dir, Input_dir):
             tmp_df = parse_adt_as_file(input_folder_doc + file_name, year, output_folder)
 
 
-def compare(s, t):
-    return Counter(s) == Counter(t)
+
+
+def doc_file_testing(file_path, year):
+    """
+    This tester ensures the accurary of datapoints in doc files
+
+    """
+
+    file_name = file_path.split('/')[-1]
+    # data is structured in 3 tables split by *
+    text = textract.process(file_path)
+    text = str(text).replace('\\n', ' ')
+    data = text.split('*')
+    interpreted_tables = {}
+    for table in data[1:]:
+        # parsing data block for day d
+        array = table.split('|')
+        # get day
+        info_day = array[0].split(',')
+        # get data start idx j
+        for j in range(len(array)):
+            if "0000" in array[j]:
+                # print("data start idx", j)
+                break
+        # gather data in table_tmp
+        # note each column represents an hour and the column has flow data
+        # for that hour.
+        table_tmp = np.zeros((6, 24))
+        for i in range(6):
+            data_row = [array[j + i * 26 + k] for k in range(24)]
+            if debug:
+                print(data_row)
+                print(len(data_row))
+            table_tmp[i] = np.array(data_row)
+        interpreted_tables[table] = table_tmp
+            # print("data_row", data_row)
+
+        analysis = array[j + 6 * 26]  # some analysis, not useful for now
+
+        # write data in out file
+        # for i in table_tmp[0]:
+        #     # h = hour of the day (1 to 24hr)
+        #     # j*15 = minutes (0, 15, 30, 45)
+        #     # data given in 15 min intervals
+        #     hr_index = ((int)(i / 100)) # (raw data given as 100 -> 1 hr)
+        #     hr = str(hr_index)
+        #     for j in range(4):
+        #         # day example: Tuesday -   November 7 -  2017=13207
+        #         count = str(table_tmp[2 + j][hr_index])
+        #         #month = info_day[1].split(" ")[0]
+        # check eligibility of the doc files.
+        
+        curr_table = table_tmp
+        num_rows = len(curr_table)
+        for i in range(len(curr_table[0])):
+            expected_sum = curr_table[1]
+            actual_sum = []
+            for j in range(2, num_rows):
+                if actual_sum == []:
+                    actual_sum = curr_table[j]
+                else:
+                    actual_sum = [sum(x) for x in zip(actual_sum, curr_table[j])]
+            for i in range(len(actual_sum)):
+                #there are actually many tiny errors in the table set, therefore, I set a boundary of 2. 
+                assert abs(actual_sum[i] - expected_sum[i]) <=2 
+        
+        expected_total_sum = sum(expected_sum)
+        real_total_sum = int(info_day[2].split("=")[1])
+        #set the boundary for the test
+        if debug == True:
+            print("expected_sum" + str(expected_total_sum))
+            print("real_total_sum " + str(real_total_sum))
+        assert abs(expected_total_sum - real_total_sum) <= 15
 
 
 def parse_adt_as_file(file_path, year, out_folder):
@@ -223,6 +296,7 @@ def parse_excel_2013(dfs):
     else:
         tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
     return tmp_df_2
+
 
 def parse_excel_2015(dfs):
     """
@@ -609,6 +683,171 @@ def get_coords_from_address(address):
     return lat, lng
 
 
+def google_doc_generater(Processed_dir):
+    """
+    This script generated the google doc file with the exact same (Id, file_name) pairs. 
+    The function goes over year_info_coor.csv files and concatenate them into one large csv in consistent format
+    flow_out.csv is the same as the google doc 
+
+    """
+    error_id = [12, 60, 61, 62, 63, 64]
+    path = Processed_dir
+    all_files = glob.glob(path + "/*.csv")
+    li = []
+    id_counter = 1
+
+    for filename in all_files:
+        curr_year = (filename.split("/")[-1]).split("_")[0]
+        if curr_year in ['2013', '2017', '2019']:
+            curr_opening = "./" + curr_year + " ADT Data"
+            df = pd.read_csv(filename, index_col=None, header=0)
+            df = df.sort_values(df.columns[0], ascending = True)
+            df = df.reset_index(drop=True)
+            ids = []
+            for i in range(len(df['Name'])):
+                file_name = df['Name'][i]
+                ids.append(id_counter)
+                if ('EB' in file_name) or ('WB' in file_name) or ('NB' in file_name) or ('SB' in file_name):
+                    id_counter += 1
+                    while id_counter in error_id:
+                        id_counter += 1
+                else:
+                    id_counter += 2
+                    while id_counter in error_id:
+                        id_counter += 1
+            df.insert(0,'Id',ids)
+            header = {'Id':'Id', 'Name':curr_opening, 'Main road':'Main road', 'Cross road':'Cross road', 'Start lat':'Start lat', 'Start lng':'Start lng', 'End lat':'End lat', 'End lng':'End lng'}
+            df['Id'] = ids
+            df = df.rename(columns={'Name': curr_opening})
+            li.append(df)
+    # For PeMS:
+    PeMS_file = path + "/" + 'Flow_processed_all.csv'
+    df = pd.read_csv(PeMS_file, index_col=None, header=0)
+    PeMS_section = df[df['Name'].apply(lambda x: x.split(" ")[0] == "PeMS")]
+    PeMS_section = PeMS_section[PeMS_section['Year'].apply(lambda x: x == 2013)]
+    PeMS_section["Name"] = PeMS_section["Name"].apply(lambda x: x.split(" ")[-1])
+    ids = []
+    for i in range(len(PeMS_section)):
+        detector_id = PeMS_section.iloc[i]
+        ids.append(id_counter)
+        id_counter += 1
+    PeMS_section = PeMS_section[["Name"]]
+    PeMS_section.insert(0,'Id',ids)
+    PeMS_section = PeMS_section.rename(columns={'Name': "PeMS"})
+    li.append(PeMS_section)  
+
+    for filename in all_files:
+        curr_year = (filename.split("/")[-1]).split("_")[0]
+        if curr_year in ['2015']:
+            curr_opening = "./" + curr_year + " ADT Data"
+            df = pd.read_csv(filename, index_col=None, header=0)
+            df = df.sort_values(df.columns[0], ascending = True)
+            df = df.reset_index(drop=True)
+            r = np.arange(len(df)).repeat(2)
+            df = pd.DataFrame(df.values[r], df.index[r], df.columns)
+            df = df.reset_index(drop=True)
+            ids = []
+            for i in range(len(df['Name'])):
+                file_name = df['Name'][i]
+                ids.append(id_counter)
+                id_counter += 1
+            df.insert(0,'Id',ids)
+            header = {'Id':'Id', 'Name':curr_opening, 'Main road':'Main road', 'Cross road':'Cross road', 'Start lat':'Start lat', 'Start lng':'Start lng', 'End lat':'End lat', 'End lng':'End lng'}
+            df['Id'] = ids
+            df = df.rename(columns={'Name': curr_opening})
+            li.append(df)
+
+    df1,df2, df3, df4, df5  = li
+
+    df1.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False)
+    df2.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
+    df3.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
+    df4.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
+    df5.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
+
+def flow_processed_generater(Processed_dir):
+    """
+    This script create an updated version of Flow_processed_tmp.csv
+    """
+    error_id = [12, 60, 61, 62, 63, 64]
+    path = Processed_dir
+    all_files = glob.glob(path + "/*.csv")
+    li = []
+    id_counter = 1
+
+    for filename in all_files:
+        curr_year = (filename.split("/")[-1]).split("_")[0]
+        if curr_year in ['2013', '2017', '2019']:
+            curr_opening = "./" + curr_year + " ADT Data"
+            df = pd.read_csv(filename, index_col=None, header=0)
+            df = df.sort_values(df.columns[0], ascending = True)
+            df = df.reset_index(drop=True)
+            ids = []
+            for i in range(len(df['Name'])):
+                file_name = df['Name'][i]
+                ids.append(id_counter)
+                if ('EB' in file_name) or ('WB' in file_name) or ('NB' in file_name) or ('SB' in file_name):
+                    id_counter += 1
+                    while id_counter in error_id:
+                        id_counter += 1
+                else:
+                    id_counter += 2
+                    while id_counter in error_id:
+                        id_counter += 1
+            df.insert(0,'Id',ids)
+            header = {'Id':'Id', 'Name':curr_opening, 'Main road':'Main road', 'Cross road':'Cross road', 'Start lat':'Start lat', 'Start lng':'Start lng', 'End lat':'End lat', 'End lng':'End lng'}
+            df['Id'] = ids
+            df = df.rename(columns={'Name': curr_opening})
+            df =  df[['Id', curr_opening]]
+            li.append(df)
+
+    # For PeMS:
+    PeMS_file = path + "/" + 'Flow_processed_all.csv'
+    df = pd.read_csv(PeMS_file, index_col=None, header=0)
+    PeMS_section = df[df['Name'].apply(lambda x: x.split(" ")[0] == "PeMS")]
+    PeMS_section = PeMS_section[PeMS_section['Year'].apply(lambda x: x == 2013)]
+    PeMS_section["Name"] = PeMS_section["Name"].apply(lambda x: x.split(" ")[-1])
+    ids = []
+    for i in range(len(PeMS_section)):
+        detector_id = PeMS_section.iloc[i]
+        ids.append(id_counter)
+        id_counter += 1
+    PeMS_section = PeMS_section[["Name"]]
+    PeMS_section.insert(0,'Id',ids)
+    PeMS_section = PeMS_section.rename(columns={'Name': "PeMS"})
+    li.append(PeMS_section)  
+    
+
+    #for 2015
+    for filename in all_files:
+        curr_year = (filename.split("/")[-1]).split("_")[0]
+        if curr_year in ['2015']:
+            curr_opening = "./" + curr_year + " ADT Data"
+            df = pd.read_csv(filename, index_col=None, header=0)
+            df = df.sort_values(df.columns[0], ascending = True)
+            df = df.reset_index(drop=True)
+            r = np.arange(len(df)).repeat(2)
+            df = pd.DataFrame(df.values[r], df.index[r], df.columns)
+            df = df.reset_index(drop=True)
+            ids = []
+            for i in range(len(df['Name'])):
+                file_name = df['Name'][i]
+                ids.append(id_counter)
+                id_counter += 1
+            df.insert(0,'Id',ids)
+            header = {'Id':'Id', 'Name':curr_opening, 'Main road':'Main road', 'Cross road':'Cross road', 'Start lat':'Start lat', 'Start lng':'Start lng', 'End lat':'End lat', 'End lng':'End lng'}
+            df['Id'] = ids
+            df = df.rename(columns={'Name': curr_opening})
+            df =  df[['Id', curr_opening]]
+            li.append(df)
+
+    df1,df2, df3, df4, df5  = li
+
+    df1.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False)
+    df2.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+    df3.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+    df4.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+    df5.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
 
 # for local testing only
 if __name__ == '__main__':
