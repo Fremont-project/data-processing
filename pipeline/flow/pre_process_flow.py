@@ -53,12 +53,12 @@ def process_adt_data(year, Processed_dir, Input_dir):
 
     if year==2015:
         input_folder_excel = Input_dir + "/Raw Data/"
-
     input_files_excel = os.listdir(input_folder_excel)
 
     # parsing of the Excel files
     for file_name in input_files_excel:
-        if is_excel_file(file_name):
+        _, file_ext = os.path.splitext(file_name)
+        if (file_ext == '.xls' or file_ext == '.xlsx'): #and is_valid_file(file_name)
             tmp_df = parse_adt_as_dataframe(input_folder_excel + file_name, year)
             output_name = output_folder + os.path.splitext(file_name)[0] + ".csv"
             if debug:
@@ -110,19 +110,6 @@ def doc_file_testing(file_path, year):
             # print("data_row", data_row)
 
         analysis = array[j + 6 * 26]  # some analysis, not useful for now
-
-        # write data in out file
-        # for i in table_tmp[0]:
-        #     # h = hour of the day (1 to 24hr)
-        #     # j*15 = minutes (0, 15, 30, 45)
-        #     # data given in 15 min intervals
-        #     hr_index = ((int)(i / 100)) # (raw data given as 100 -> 1 hr)
-        #     hr = str(hr_index)
-        #     for j in range(4):
-        #         # day example: Tuesday -   November 7 -  2017=13207
-        #         count = str(table_tmp[2 + j][hr_index])
-        #         #month = info_day[1].split(" ")[0]
-        # check eligibility of the doc files.
         
         curr_table = table_tmp
         num_rows = len(curr_table)
@@ -239,24 +226,6 @@ def parse_adt_as_file(file_path, year, out_folder):
         assert abs(expected_total_sum - real_total_sum) <= 15
     out_file.close()
     
-    # for table in data[1:]:
-    #     curr_table = interpreted_tables[table]
-    #     num_rows = len(curr_table)
-    #     for i in range(len(curr_table[0])):
-    #         expected_sum = curr_table[1]
-    #         actual_sum = []
-    #         for j in range(2, num_rows):
-    #             if actual_sum == []:
-    #                 actual_sum = curr_table[j]
-    #             else:
-    #                 actual_sum = [sum(x) for x in zip(actual_sum, curr_table[j])]
-    #         for i in range(len(actual_sum)):
-    #             
-    #             assert abs(actual_sum[i] - expected_sum[i]) <=2 
-    #     expected_entire_sum =  
-
-
-
 def parse_adt_as_dataframe(file_path, year):
     """ To do """
     xls_file = pd.ExcelFile(file_path)
@@ -388,55 +357,55 @@ def parse_sheet_helper_2019(name, dfs):
     return Input
 
 
-def is_excel_file(file_name):
-    """ To do """
-    _, file_ext = os.path.splitext(file_name)
-    return (file_ext == '.xls' or file_ext == '.xlsx') and is_valid_file(file_name)
+# def is_excel_file(file_name):
+#     """ To do """
+#     _, file_ext = os.path.splitext(file_name)
+#     return (file_ext == '.xls' or file_ext == '.xlsx') and is_valid_file(file_name)
 
 
-def is_valid_file(file_name):
-    """ To do """
-    is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
-    return '$' not in file_name and '.DS_Store' not in file_name and not is_folder
+# def is_valid_file(file_name):
+#     """ To do """
+#     is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
+#     return '$' not in file_name and '.DS_Store' not in file_name and not is_folder
 
 # removes extension from file name
-def remove_ext(file_path):
-    """ To do """
-    file_name, _ = os.path.splitext(file_path)
-    return file_name
+# def remove_ext(file_path):
+#     """ To do """
+#     file_name, _ = os.path.splitext(file_path)
+#     return file_name
 
 
-def remove_direction(string):
-    """ To do """
-    return string.replace('Nb', '').replace('Sb', '')\
-        .replace('Eb', '').replace('Wb', '')
+# def remove_direction(string):
+#     """ To do """
+#     return string.replace('Nb', '').replace('Sb', '')\
+#         .replace('Eb', '').replace('Wb', '')
 
 
-def get_of_direction(string):
-    """ To do """
-    of_directions = ['S Of', 'E Of', 'W Of', 'N Of']
-    for of in of_directions:
-        if of in string:
-            return of
+# def get_of_direction(string):
+#     """ To do """
+#     of_directions = ['S Of', 'E Of', 'W Of', 'N Of']
+#     for of in of_directions:
+#         if of in string:
+#             return of
 
 
-def find_splitter(string, splitters):
-    """ To do """
-    for splitter in splitters:
-        if splitter in string:
-            return splitter
+# def find_splitter(string, splitters):
+#     """ To do """
+#     for splitter in splitters:
+#         if splitter in string:
+#             return splitter
 
 
-def is_doc_file(filename):
-    """ To do """
-    _, file_ext = os.path.splitext(filename)
-    return file_ext == '.doc' and is_valid_file(filename)
+# def is_doc_file(filename):
+#     """ To do """
+#     _, file_ext = os.path.splitext(filename)
+#     return file_ext == '.doc' and is_valid_file(filename)
 
-def create_directory(path, name):
-    """ To do """
-    dir = path + "/" + name
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
+# def create_directory(path, name):
+#     """ To do """
+#     dir = path + "/" + name
+#     if not os.path.isdir(dir):
+#         os.mkdir(dir)
 
 ##############################
 ############ HERE ############
@@ -484,7 +453,10 @@ def get_geo_data(year, Input_dir, Processed_dir):
     # iterate over the excel files to obtain main road addresses
     cache_main_roads = []
     for file_name in input_files_excel:
-        if is_valid_file(file_name) and is_excel_file(file_name):
+        _, file_ext = os.path.splitext(file_name)
+        is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
+        print(is_folder)
+        if (file_ext == '.xls' or file_ext == '.xlsx') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
             if debug:
                 print("processing:", file_name)
             main_road_info = None
@@ -505,7 +477,10 @@ def get_geo_data(year, Input_dir, Processed_dir):
     # iterate over the doc files to obtain main road addresses
     if year in [2017, 2019]:
         for file_name in input_file_doc:
-            if is_valid_file(file_name) and is_doc_file(file_name):
+            _, file_ext = os.path.splitext(file_name)
+            is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
+            print(is_folder)
+            if (file_ext == '.doc') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
                 if debug:
                     print("processing:", file_name)
                 main_road_info = None
@@ -551,7 +526,9 @@ def get_main_road_info_2013(in_folder, file_name):
     """ To do """
     if debug:
         print(file_name)
-    if is_excel_file(file_name):
+    _, file_ext = os.path.splitext(file_name)
+    is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
+    if (file_ext == '.xls' or file_ext == '.xlsx') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
         # read excel data into dataframe
         xls_file = pd.ExcelFile(in_folder + file_name)
         dfs = {}
@@ -593,8 +570,9 @@ def get_main_road_info_2015(file_name):
     getting 2015 main road info from file name
 
     """
-
-    if is_excel_file(file_name):
+    _, file_ext = os.path.splitext(file_name)
+    is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
+    if (file_ext == '.xls' or file_ext == '.xlsx') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
         if debug:
             print(file_name)
         main_road = file_name.split('betw.')[0].strip()
@@ -615,26 +593,37 @@ def get_main_road_info_2017(file_name):
     file_name = mission blvd S OF washington blvd signal
     output = (file_name, city, main_road, cross_road, cross1, cross2)
     """
-
-    name = remove_ext(file_name).title()
+    file_name, file_ext = os.path.splitext(file_path)
+    name = file_name.title()
     city = 'Fremont'
     main_road_info = None
+
+
+    of_directions = ['S Of', 'E Of', 'W Of', 'N Of']
+    for of in of_directions:
+        if of in name:
+            Direction_b = of
     if 'Bt' in name:
         # Ex1: mission blvd BT driscoll rd AND I 680 NB
         main_road = name.split('Bt')[0].strip()
         cross_road = name.split('Bt')[1].strip()
-        cross1 = remove_direction(cross_road.split('And')[0]).strip()
-        cross2 = remove_direction(cross_road.split('And')[1]).strip()
+
+
+        cross1 = remove_direction(cross_road.split('And')[0].replace('Nb', '').replace('Sb', '')\
+        .replace('Eb', '').replace('Wb', '')).strip()
+        cross2 = (cross_road.split('And')[1].replace('Nb', '').replace('Sb', '')\
+        .replace('Eb', '').replace('Wb', '')).strip()
         main_road_info = (file_name, city, main_road, cross_road, cross1, cross2)
-    elif get_of_direction(name):
+    elif Direction_b:
         # Ex2: mission blvd S OF washington blvd signal
-        of_direction = get_of_direction(name)  # S OF
+        of_direction = Direction_b  # S OF
         main_road = name.split(of_direction)[0].strip()
         cross_road = name.split(of_direction)[1] \
             .replace('Signal', '') \
             .replace('Stop Sign', '') \
             .strip()
-        cross1 = remove_direction(cross_road)
+        cross1 = cross_road.replace('Nb', '').replace('Sb', '')\
+        .replace('Eb', '').replace('Wb', '')
         main_road_info = (file_name, city, main_road, cross_road, cross1, None)
     else:
         raise (Exception('Unable to parse main road info from 2017 file name: %s' % file_name))
@@ -651,17 +640,26 @@ def get_main_road_info_2019(file_name):
     file_name = AUTO MALL PKWY BT FREMONT BLVD AND I-680 EB
     output = (file_name, city, main_road, cross_road, cross1, cross2)
     """
-
-    name = remove_ext(file_name).title()
+    file_name, _ = os.path.splitext(file_path)
+    name = file_name.title()
     city = 'Fremont'
 
-    bt = find_splitter(name, ['Bt', 'Bet.'])
+    for splitter in ['Bt', 'Bet.']:
+        if splitter in name:
+            bt = splitter
+
+    #bt = find_splitter(name, ['Bt', 'Bet.'])
     main_road = name.split(bt)[0].strip()
     cross_road = name.split(bt)[1].strip()
 
-    And = find_splitter(cross_road, ['And', '&'])
-    cross1 = remove_direction(cross_road).split(And)[0].strip()
-    cross2 = remove_direction(cross_road).split(And)[1].strip()
+    for splitter in ['And', '&']:
+        if splitter in cross_road:
+            And = splitter
+    #And = find_splitter(cross_road, ['And', '&'])
+    cross1 = (cross_road.replace('Nb', '').replace('Sb', '')\
+        .replace('Eb', '').replace('Wb', '')).split(And)[0].strip()
+    cross2 = (cross_road.replace('Nb', '').replace('Sb', '')\
+        .replace('Eb', '').replace('Wb', '')).split(And)[1].strip()
 
     main_road_info = (file_name, city, main_road, cross_road, cross1, cross2)
     return main_road_info
