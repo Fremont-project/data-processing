@@ -257,8 +257,6 @@ def parse_adt_as_file(file_path, year, out_folder):
 
 
 
-
-
 def parse_adt_as_dataframe(file_path, year):
     """ To do """
     xls_file = pd.ExcelFile(file_path)
@@ -291,10 +289,16 @@ def parse_excel_2013(dfs):
     tmp_df_2 = tmp_df_2[['Unnamed: 1', 'TIME', 'NB', 'SB', 'EB', 'WB']]
     tmp_df_2['Date'] = tmp_df_2['Unnamed: 1'].astype(str) + ' ' + tmp_df_2['TIME']
     tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB', 'EB', 'WB']]
+    #tmp_df_2[pd.isnull(tmp_df_2['NB']) or pd.isnull(tmp_df_2['SB'] or pd.isnull(tmp_df_2['EB'] or pd.isnull(tmp_df_2['WB']))]
+    
     if math.isnan(tmp_df_2['NB'][4]):
         tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
+        tmp_df_2.dropna(subset=['EB'], inplace=True)
+        tmp_df_2.dropna(subset=['WB'], inplace=True)
     else:
         tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
+        tmp_df_2.dropna(subset=['NB'], inplace=True)
+        tmp_df_2.dropna(subset=['SB'], inplace=True)
     return tmp_df_2
 
 
@@ -313,9 +317,12 @@ def parse_excel_2015(dfs):
     tmp_df_2 = tmp_df_2.rename(columns={'Unnamed: 1': 'Date', 'Northbound': 'NB', 'Southbound': 'SB', 'Eastbound': 'EB', 'Westbound': "WB"})
     if math.isnan(tmp_df_2['NB'][4]):
         tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
+        tmp_df_2.dropna(subset=['EB'], inplace=True)
+        tmp_df_2.dropna(subset=['WB'], inplace=True)
     else:
         tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
-
+        tmp_df_2.dropna(subset=['NB'], inplace=True)
+        tmp_df_2.dropna(subset=['SB'], inplace=True)
     return tmp_df_2
 
 
