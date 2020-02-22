@@ -2,17 +2,14 @@ import pandas as pd
 import numpy as np
 import os
 from pathlib import Path
-from fremontdropbox_flow import get_dropbox_location
 
-dropbox_dir = get_dropbox_location()
-ADT_dir = dropbox_dir + '/Private Structured data collection/Data processing/Raw/Demand/Flow_speed/ADT'
-PeMs_dir = dropbox_dir + '/Private Structured data collection/Data processing/Raw/Demand/PeMs'
-local_download =  str(os.path.join(Path.home(), "Downloads"))
-Processed_dir = dropbox_dir + '/Private Structured data collection/Data processing/Temporary exports to be copied to processed data/Flow_processed'
-#directory to year reformat
-City_dir = Processed_dir + "/" + "City"
 
-def parse_2013(line, w):
+ERRONEOUS_FILES = ['DURHAM RD BT I-680 AND MISSION BLVD EB', 'MISSION BLVD BT WASHINGTON BLVD AND PINES ST SB']
+
+
+
+def parse_2013(line, w, Processed_dir):
+
     year = 2013
     splitted = line.split(",")
     if len(splitted) == 2:
@@ -50,7 +47,7 @@ def parse_2013(line, w):
             w.write("," + str(((int)(i))))
 
 
-def parse_2015(line, w):
+def parse_2015(line, w, Processed_dir):
     year = 2015
     id_flow, title = line.split(",")
     title = title.replace('\n', '')
@@ -85,7 +82,7 @@ def parse_2015(line, w):
             w.write("," + str(((int)(i))))
 
 
-def parse_2017(line, w):
+def parse_2017(line, w, Processed_dir):
     year = 2017
     splitted = line.split(",")
     if len(splitted) == 2:
@@ -120,7 +117,7 @@ def parse_2017(line, w):
         return -1
 
 
-def parse_2019(line, w):
+def parse_2019(line, w, re_formated_Processed_dir):
     year = 2019  # Edson: I added this line, check if its correct
     splitted = line.split(",")
     if len(splitted) == 2:
@@ -128,25 +125,25 @@ def parse_2019(line, w):
     else: 
         id_flow, title = splitted[0], splitted[1]
     title = title.replace('\n', '')
-    filename = get_file_name(title)
-
+    filename = os.path.splitext(title)[0]    #get_file_name(title)
+    
     # Don't parse files known to be erroneous
     if filename in ERRONEOUS_FILES:
-        print("file not processed: ", filename)
+        print("file not processed: ", filename)  
         return
 
     if title == '':
         return
+
     if ".pdf" in title:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/Format from pdf/" + title.split('.p')[0] + ".csv")
+        data = pd.read_csv(re_formated_Processed_dir + "/City/" + str(year) + " reformat/Format from pdf/" + title.split('.p')[0] + ".csv")
         day = data['Day'][0]
         direction = data['Count'].to_numpy()
-
         w.write("\n" + str(year) + "," + title + "," + id_flow + "," + title.split('.p')[0][-2:] + "," + day)
         for i in direction:
             w.write("," + str(((int)(i))))
     elif ".x" in title:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/Format from xlsx/" + title.split('.x')[0] + ".csv")
+        data = pd.read_csv(re_formated_Processed_dir + "/City/" + str(year) + " reformat/Format from xlsx/" + title.split('.x')[0] + ".csv")
         col = data.columns
         day = data[col[6]][0]
         for c in data.columns:
@@ -167,7 +164,7 @@ def parse_2019(line, w):
         print("ERROR HERE")
         return -1
 
-def parse_PeMS(line, w):
+def parse_PeMS(line, w, PeMs_dir):
     splitted = line.split(",")
     if len(splitted) == 2:
         id_flow, id_pems = splitted
@@ -206,12 +203,12 @@ def parse_PeMS(line, w):
         w.write(data_flow)
 
 
-def process_data():
+def process_data(Processed_dir, re_formated_Processed_dir, PeMs_dir):
     # contains list of processed file names from all years and
     # all file types and from city and PeMS data
-    curr_file = open(Processed_dir + "/" + "Flow_processed_tmp.csv", "r", encoding= 'unicode_escape')#encoding='utf-8-sig').strip()
-    w = open(Processed_dir + "/" +'Flow_processed_city.csv', 'w')
-    w2 = open(Processed_dir + "/" +'Flow_processed_PeMS.csv', 'w')
+    curr_file = open(re_formated_Processed_dir + "/" + "Flow_processed_tmp.csv", "r", encoding= 'unicode_escape')#encoding='utf-8-sig').strip()
+    w = open(re_formated_Processed_dir + "/" +'Flow_processed_city.csv', 'w')
+    w2 = open(re_formated_Processed_dir + "/" +'Flow_processed_PeMS.csv', 'w')
     legend = "Year,Name,Id,Direction,Day 1"
 
     # legend for city csv
@@ -242,20 +239,20 @@ def process_data():
             pems = False
         #once we have determined which section we belong to, we could start process accordingly
         if pems:
-            parse_PeMS(line, w2)
+            parse_PeMS(line, w2, PeMs_dir)
         elif "ADT" in line:
             year = (int)(line.split(',./')[1].split(' ')[0])
         elif year == 2013:
-            if parse_2013(line, w) == -1:
+            if parse_2013(line, w, re_formated_Processed_dir) == -1:
                 break
         elif year == 2015:
-            if parse_2015(line, w) == -1:
+            if parse_2015(line, w, re_formated_Processed_dir) == -1:
                 break        
         elif year == 2017:
-            if parse_2017(line, w) == -1:
+            if parse_2017(line, w, re_formated_Processed_dir) == -1:
                 break
         elif year == 2019:
-            if parse_2019(line, w) == -1:
+            if parse_2019(line, w, re_formated_Processed_dir) == -1:
                 break
         else:
             print(line)
@@ -266,9 +263,6 @@ def process_data():
     w.close()
     w2.close()
 
-def get_file_name(filename):
-    filename, file_ext = os.path.splitext(filename)
-    return filename
 
 if __name__ == '__main__':
     process_data()

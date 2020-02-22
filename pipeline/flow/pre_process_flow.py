@@ -7,12 +7,13 @@ from pathlib import Path
 import math
 from datetime import datetime
 import glob
+import csv
+import re
 
 
 API_KEY = "AIzaSyB8rJhDsfwvIod9jVTfFm1Dtv2eO4QWqxQ"
 GOOGLE_MAPS_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
-#MONTH = {'January': '01', 'Febuary'}
 debug = False
 """
 New generic method to process ADT data into csv files
@@ -68,7 +69,9 @@ def process_adt_data(year, Processed_dir, Input_dir):
 
     # parsing of the doc files
     for file_name in input_file_doc:
-        if is_doc_file(file_name):
+        _, file_ext = os.path.splitext(file_name)
+        if (file_ext == '.doc'):
+        #if is_doc_file(file_name):
             tmp_df = parse_adt_as_file(input_folder_doc + file_name, year, output_folder)
 
 
@@ -152,7 +155,7 @@ def parse_adt_as_file(file_path, year, out_folder):
     if debug:
         print(file_path)
     file_name = file_path.split('/')[-1]
-    out_file = open(out_folder + '/' + remove_ext(file_name) + '.csv', 'w')
+    out_file = open(out_folder + '/' + os.path.splitext(file_name)[0] + '.csv', 'w')
     out_file.write("Date,Count\n")
 
     # data is structured in 3 tables split by *
@@ -356,56 +359,6 @@ def parse_sheet_helper_2019(name, dfs):
     Input = Input.assign(date=day)
     return Input
 
-
-# def is_excel_file(file_name):
-#     """ To do """
-#     _, file_ext = os.path.splitext(file_name)
-#     return (file_ext == '.xls' or file_ext == '.xlsx') and is_valid_file(file_name)
-
-
-# def is_valid_file(file_name):
-#     """ To do """
-#     is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
-#     return '$' not in file_name and '.DS_Store' not in file_name and not is_folder
-
-# removes extension from file name
-# def remove_ext(file_path):
-#     """ To do """
-#     file_name, _ = os.path.splitext(file_path)
-#     return file_name
-
-
-# def remove_direction(string):
-#     """ To do """
-#     return string.replace('Nb', '').replace('Sb', '')\
-#         .replace('Eb', '').replace('Wb', '')
-
-
-# def get_of_direction(string):
-#     """ To do """
-#     of_directions = ['S Of', 'E Of', 'W Of', 'N Of']
-#     for of in of_directions:
-#         if of in string:
-#             return of
-
-
-# def find_splitter(string, splitters):
-#     """ To do """
-#     for splitter in splitters:
-#         if splitter in string:
-#             return splitter
-
-
-# def is_doc_file(filename):
-#     """ To do """
-#     _, file_ext = os.path.splitext(filename)
-#     return file_ext == '.doc' and is_valid_file(filename)
-
-# def create_directory(path, name):
-#     """ To do """
-#     dir = path + "/" + name
-#     if not os.path.isdir(dir):
-#         os.mkdir(dir)
 
 ##############################
 ############ HERE ############
@@ -762,7 +715,7 @@ def google_doc_generater(Processed_dir):
             df = df.rename(columns={'Name': curr_opening})
             li.append(df)
 
-    df1,df2, df3, df4, df5  = li
+    df1,df2, df3, df4, df5  = li[0], li[1], li[2], li[3], li[4]
 
     df1.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False)
     df2.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
@@ -846,13 +799,64 @@ def flow_processed_generater(Processed_dir):
             df =  df[['Id', curr_opening]]
             li.append(df)
 
-    df1,df2, df3, df4, df5  = li
+    df1,df2, df3, df4, df5  = li[0], li[1], li[2], li[3], li[4]
 
     df1.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False)
     df2.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
     df3.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
     df4.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
     df5.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+
+
+
+def Speed_data_parser(speed_data_dir, Processed_dir):
+    """
+    This scripts parse the speed data 2015
+    """
+
+    df_num = pd.DataFrame()
+    df_percent = pd.DataFrame()
+
+    for f in os.listdir(speed_data_dir):
+        print(f)
+        if('xls' in f):
+            input_file_all = pd.read_excel(speed_data_dir + "/" + f, sheet_name = '#2').rename(columns={'City of Fremont':'speed'})
+            direction_descr = input_file_all['Unnamed: 10'][15] # 17K in the excel file
+            speed_limit = input_file_all['Unnamed: 34'][72]#74AI
+            if 'East' in direction_descr:
+                direction = ['EB', 'WB']
+            else:
+                direction = ['NB', 'SB']
+            input_file = input_file_all.iloc[17:68].rename(columns={'City of Fremont':'speed','Unnamed: 31': direction[0], 'Unnamed: 32': direction[1]})
+            # input_file = input_file_all.iloc[17:68,31:33]
+            input_file = input_file[['speed', direction[0], direction[1]]].fillna(value = 0).reset_index()
+            sum1 = input_file[direction[0]].sum()
+            sum2 = input_file[direction[1]].sum()
+            series1 = input_file[direction[0]][::-1]/sum1
+            cumsum1 = series1.cumsum()
+            input_file[direction[0]+'_Cum']=cumsum1[::-1]
+            series2 = input_file[direction[1]][::-1]/sum2
+            cumsum2 = series2.cumsum()
+            input_file[direction[1]+'_Cum']=cumsum2[::-1]
+            input_file = input_file[::-1].transpose().drop('index', axis=0)
+            input_file.insert(0,'Name',f)
+            
+            input_file.insert(1,'id','')
+            input_file.insert(2,'Direction','')
+            input_file.insert(3,'Speed limit',speed_limit)
+            input_file.iloc[1,2]=direction[0]
+            input_file.iloc[3,2]=direction[0]
+            input_file.iloc[2,2]=direction[1]
+            input_file.iloc[4,2]=direction[1]
+            
+            df_num = df_num.append(input_file.iloc[1:3])
+            df_percent = df_percent.append(input_file.iloc[3:5])
+
+    df_num.to_csv(Processed_dir + "/" + '2015_Speed_Processed_Num.csv')
+    df_percent.to_csv(Processed_dir + "/" + '2015_Speed_Processed_Percent.csv')
+
+
+
 
 # for local testing only
 if __name__ == '__main__':
