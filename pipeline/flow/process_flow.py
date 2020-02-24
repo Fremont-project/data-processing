@@ -9,7 +9,6 @@ ERRONEOUS_FILES = ['DURHAM RD BT I-680 AND MISSION BLVD EB', 'MISSION BLVD BT WA
 
 
 def parse_2013(line, w, Processed_dir):
-
     year = 2013
     splitted = line.split(",")
     if len(splitted) == 2:
