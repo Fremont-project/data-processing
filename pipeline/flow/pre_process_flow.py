@@ -17,9 +17,7 @@ GOOGLE_MAPS_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 debug = False
 
 
-"""
-New generic method to process ADT data into csv files
-"""
+
 def process_adt_data(year, Processed_dir, Input_dir):
     """
     This function processes the Excel and PDF ADT data files (city data) into CSV files. Note that one file corresponds to one main road and the traffic flow data recordings in it.
@@ -53,7 +51,6 @@ def process_adt_data(year, Processed_dir, Input_dir):
     if year in [2017, 2019]:
         input_folder_doc = Input_dir + "/" + "%d doc/" % year
         input_file_doc = os.listdir(input_folder_doc)
-
     if year==2015:
         input_folder_excel = Input_dir + "/Raw Data/"
     input_files_excel = os.listdir(input_folder_excel)
@@ -63,6 +60,8 @@ def process_adt_data(year, Processed_dir, Input_dir):
         _, file_ext = os.path.splitext(file_name)
         if (file_ext == '.xls' or file_ext == '.xlsx'): #and is_valid_file(file_name)
             tmp_df = parse_adt_as_dataframe(input_folder_excel + file_name, year)
+            if file_name == 'WB Washington Blvd at Gallegos.xls':
+                print(tmp_df)
             output_name = output_folder + os.path.splitext(file_name)[0] + ".csv"
             if debug:
                 print(output_folder)
@@ -255,11 +254,15 @@ def parse_adt_as_dataframe(file_path, year):
     and calls the helper function for each year to parse the data sheets. 
     """
     xls_file = pd.ExcelFile(file_path)
+
     dfs = {}
     for sheet_name in xls_file.sheet_names:
         dfs[sheet_name] = xls_file.parse(sheet_name)
     
     if year==2013:
+        # print(file_path)
+        # if file_path.split("/")[-1] == 'WB Washington Blvd at Gallegos.xls':
+        #     print(dfs['Input'])
         return parse_excel_2013(dfs)
         
     if year==2015:
@@ -275,6 +278,7 @@ def parse_excel_2013(dfs):
     """ 
     ***2013 Excel files*** are structured in data sheets. The first data sheet "Summary" contains the main road, cross streets, city information and the start date of the recording. It also summarizes the data contained in all other sheets into a bar plot of traffic flow vs time of day bins (i.e Tuesday AM, Wednesday PM) for different flow directions and into a line plot of traffic flow vs. hour of day for different days of the week. The sheets that follow are named "D1", "D2",..."DN" where N denotes the N'th day since the start date. These sheets are structured into two tables, AM counts and PM counts. Each table row gives the traffic flow per timestep of 15 minutes. The first column is the time of day in hh:mm format follow by direction columns of traffic flow (NB, SB, EB, WB). 
     """
+
     tmp_df = dfs['Input']
     tmp_df.to_csv("test_tmp.csv")
 
@@ -288,12 +292,17 @@ def parse_excel_2013(dfs):
     
     if math.isnan(tmp_df_2['NB'][4]):
         tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
-        tmp_df_2.dropna(subset=['EB'], inplace=True)
-        tmp_df_2.dropna(subset=['WB'], inplace=True)
+        curr_count = tmp_df_2.shape[0]
+        tmp_df_2.drop(tmp_df_2.tail(curr_count - 288).index,inplace=True)
+        #tmp_df_2.dropna(subset=['EB'], inplace=True)
+        #tmp_df_2.dropna(subset=['WB'], inplace=True)
     else:
         tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
-        tmp_df_2.dropna(subset=['NB'], inplace=True)
-        tmp_df_2.dropna(subset=['SB'], inplace=True)
+        curr_count = tmp_df_2.shape[0]
+        tmp_df_2.drop(tmp_df_2.tail(curr_count - 288).index,inplace=True)
+        #tmp_df_2.dropna(subset=['NB'], inplace=True)
+        #tmp_df_2.dropna(subset=['SB'], inplace=True)
+
     return tmp_df_2
 
 
@@ -312,12 +321,12 @@ def parse_excel_2015(dfs):
     tmp_df_2 = tmp_df_2.rename(columns={'Unnamed: 1': 'Date', 'Northbound': 'NB', 'Southbound': 'SB', 'Eastbound': 'EB', 'Westbound': "WB"})
     if math.isnan(tmp_df_2['NB'][4]):
         tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
-        tmp_df_2.dropna(subset=['EB'], inplace=True)
-        tmp_df_2.dropna(subset=['WB'], inplace=True)
+        tmp_df_2.dropna(subset=['EB', 'WB'], inplace=True)
+        #tmp_df_2.dropna(how='all', inplace=True)
     else:
         tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
-        tmp_df_2.dropna(subset=['NB'], inplace=True)
-        tmp_df_2.dropna(subset=['SB'], inplace=True)
+        tmp_df_2.dropna(subset=['NB', 'SB'], inplace=True)
+        #tmp_df_2.dropna(subset=['SB'], inplace=True)
     return tmp_df_2
 
 
@@ -415,11 +424,9 @@ def get_geo_data(year, Input_dir, Processed_dir):
     input_file_doc = []
     if year in [2013, 2017, 2019]:
         input_folder_excel = Input_dir + "/" + "%d ADT Data/" % year
-        input_files_excel = os.listdir()
+        #input_files_excel = os.listdir(input_folder_excel)
     if year in [2017, 2019]:
-        print()
         input_folder_doc = Input_dir + "/" + "%d doc/" % year
-
         input_file_doc = os.listdir(input_folder_doc)
         # print("the doc files")
         # print(input_file_doc)
@@ -819,7 +826,6 @@ def flow_processed_generater(Processed_dir):
     PeMS_section.insert(0,'Id',ids)
     PeMS_section = PeMS_section.rename(columns={'Name': "PeMS"})
     li.append(PeMS_section)  
-    
 
     #for 2015
     for filename in all_files:
@@ -863,7 +869,6 @@ def Speed_data_parser(speed_data_dir, Processed_dir):
     df_percent = pd.DataFrame()
 
     for f in os.listdir(speed_data_dir):
-        print(f)
         if('xls' in f):
             input_file_all = pd.read_excel(speed_data_dir + "/" + f, sheet_name = '#2').rename(columns={'City of Fremont':'speed'})
             direction_descr = input_file_all['Unnamed: 10'][15] # 17K in the excel file
