@@ -60,8 +60,6 @@ def process_adt_data(year, Processed_dir, Input_dir):
         _, file_ext = os.path.splitext(file_name)
         if (file_ext == '.xls' or file_ext == '.xlsx'): #and is_valid_file(file_name)
             tmp_df = parse_adt_as_dataframe(input_folder_excel + file_name, year)
-            if file_name == 'WB Washington Blvd at Gallegos.xls':
-                print(tmp_df)
             output_name = output_folder + os.path.splitext(file_name)[0] + ".csv"
             if debug:
                 print(output_folder)
@@ -440,7 +438,6 @@ def get_geo_data(year, Input_dir, Processed_dir):
     for file_name in input_files_excel:
         _, file_ext = os.path.splitext(file_name)
         is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
-        print(is_folder)
         if (file_ext == '.xls' or file_ext == '.xlsx') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
             if debug:
                 print("processing:", file_name)
@@ -464,7 +461,6 @@ def get_geo_data(year, Input_dir, Processed_dir):
         for file_name in input_file_doc:
             _, file_ext = os.path.splitext(file_name)
             is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
-            print(is_folder)
             if (file_ext == '.doc') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
                 if debug:
                     print("processing:", file_name)
