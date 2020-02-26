@@ -267,15 +267,15 @@ def process_data_City(Processed_dir, re_formated_Processed_dir):
     """
     Updated scripts to generated "Flow_processed_city.csv" containing combined city flow data for all year
     """
-    ids = ids_extraction(re_formated_Processed_dir)
     input_files_excel = os.listdir(Processed_dir)
     processed_files = []
     for file in input_files_excel:
         if os.path.isdir(Processed_dir + "/" + file):
             processed_files.append(file)
-            print(file)
             year = file.split(" ")[0]
-    processed_files.sort() 
+    processed_files.sort()
+    processed_files = [processed_files[0]] + processed_files[2:4] + [processed_files[1]]
+
 
     to_be_concatenated = []
     for year_processed in processed_files:
@@ -317,18 +317,36 @@ def process_data_City(Processed_dir, re_formated_Processed_dir):
     df_total.reset_index(drop=True, inplace=True)
     df_total['Id'] = df_total.index
 
+
     cols = df_total.columns.tolist()
     cols = cols[-5:] + cols[0:-5]
     df_total = df_total[cols]
+
+    ids = ids_extraction(re_formated_Processed_dir)
+    error_id = [12, 61, 62, 63, 64]
+    all_year_ids = {}
+
+    for year in ['2013', '2017', '2019', '2015']:
+        city_ids = []
+        year_length = len(df_total[df_total['year'] == year])
+        starting_id = int(ids[year][0])
+        id_counter = starting_id
+        for n in range(year_length):
+            while id_counter in error_id:
+                id_counter += 1
+            city_ids.append(id_counter)
+            id_counter += 1
+        all_year_ids[year] = city_ids
+    city_ids = all_year_ids['2013'] + all_year_ids['2017'] + all_year_ids['2019'] + all_year_ids['2015'] 
+    df_total['Id'] = city_ids
+
     df_total.to_csv(re_formated_Processed_dir + '/Flow_processed_city.csv')
 
 
 def proces_data_PeMS(Processed_dir, re_formated_Processed_dir, PeMs_dir):
-
     """
     Updated scripts to generated "Flow_processed_PeMS.csv" containing combined PeMS flow data for all years
     """
-    
     curr_file = open(re_formated_Processed_dir + "/" + "Flow_processed_tmp.csv", "r", encoding= 'unicode_escape')#encoding='utf-8-sig').strip()
     w2 = open(re_formated_Processed_dir + "/" +'Flow_processed_PeMS.csv', 'w')
     # legend for pems csv
@@ -362,6 +380,7 @@ def proces_data_PeMS(Processed_dir, re_formated_Processed_dir, PeMs_dir):
     w2.close()
 
 def ids_extraction(re_formated_Processed_dir):
+
     curr_file = open(re_formated_Processed_dir + "/" + "Flow_processed_tmp.csv", "r", encoding= 'unicode_escape')
     ids = {}
     curr_year = 0
