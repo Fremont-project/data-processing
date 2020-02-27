@@ -4,164 +4,6 @@ import os
 from pathlib import Path
 
 
-ERRONEOUS_FILES = ['DURHAM RD BT I-680 AND MISSION BLVD EB', 'MISSION BLVD BT WASHINGTON BLVD AND PINES ST SB']
-
-
-
-def parse_2013(line, w, Processed_dir):
-    year = 2013
-    splitted = line.split(",")
-    if len(splitted) == 2:
-        id_flow, title = splitted
-    else: 
-        id_flow, title = splitted[0], splitted[1]
-    title = title.replace('\n', '')
-    if title == '':
-        return
-    if "EB " not in title and "WB " not in title:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/" + title.split('.x')[0] + ".csv")
-        for c in data.columns:
-            if data[c].count() == 0:
-                data = data.drop(columns=c)
-        col = data.columns
-        day = data[col[1]][0]
-        direction1 = data[col[3]].to_numpy()[:data[col[3]].count()]
-        direction2 = data[col[4]].to_numpy()[:data[col[4]].count()]
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + col[3] + "," + day)
-        for i in direction1:
-            w.write("," + str(((int)(i))))
-        w.write("\n" + str(year) + "," + title + "," + str(((int)(id_flow)) + 1) + "," + col[4] + "," + day)
-        for i in direction2:
-            w.write("," + str(((int)(i))))
-    else:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/" + title.split('.x')[0] + ".csv")
-        for c in data.columns:
-            if data[c].count() == 0:
-                data = data.drop(columns=c)
-        col = data.columns
-        day = data[col[1]][0]
-        direction = data[col[3]].to_numpy()[:data[col[3]].count()]
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + col[3] + "," + day)
-        for i in direction:
-            w.write("," + str(((int)(i))))
-
-
-def parse_2015(line, w, Processed_dir):
-    year = 2015
-    id_flow, title = line.split(",")
-    title = title.replace('\n', '')
-    if title == '':
-        return
-    if "EB " not in title and "WB " not in title:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/" + title.split('.x')[0] + ".csv")
-        for c in data.columns:
-            if data[c].count() == 0:
-                data = data.drop(columns=c)
-        col = data.columns
-        day = data[col[1]][0]
-        direction1 = data[col[3]].to_numpy()[:data[col[3]].count()]
-        direction2 = data[col[4]].to_numpy()[:data[col[4]].count()]
-        
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + col[3] + "," + day)
-        for i in direction1:
-            w.write("," + str(((int)(i))))
-        w.write("\n" + str(year) + "," + title + "," + str(((int)(id_flow)) + 1) + "," + col[4] + "," + day)
-        for i in direction2:
-            w.write("," + str(((int)(i))))
-    else:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/" + title.split('.x')[0] + ".csv")
-        for c in data.columns:
-            if data[c].count() == 0:
-                data = data.drop(columns=c)
-        col = data.columns
-        day = data[col[1]][0]
-        direction = data[col[3]].to_numpy()[:data[col[3]].count()]
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + col[3] + "," + day)
-        for i in direction:
-            w.write("," + str(((int)(i))))
-
-
-def parse_2017(line, w, Processed_dir):
-    year = 2017
-    splitted = line.split(",")
-    if len(splitted) == 2:
-        id_flow, title = splitted
-    else: 
-        id_flow, title = splitted[0], splitted[1]
-    title = title.replace('\n', '')
-    if title == '':
-        return
-    if ".pdf" in title:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/Format from pdf/" + title.split('.p')[0] + ".csv")
-        day = data['Day'][0]
-        direction = data['Count'].to_numpy()
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + title.split('.p')[0][-2:] + "," + day)
-        for i in direction:
-            w.write("," + str(((int)(i))))
-    elif ".x" in title:
-        data = pd.read_csv(Processed_dir + "/City/" + str(year) + " reformat/Format from xlsx/" + title.split('.x')[0] + ".csv")
-        day = data['Date'][0]
-        col = data.columns
-        direction1 = data[col[3]].to_numpy()[:data[col[3]].count()]
-        direction2 = data[col[4]].to_numpy()[:data[col[4]].count()]
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + col[3] + "," + day)
-        for i in direction1:
-            w.write("," + str(((int)(i))))
-        w.write("\n" + str(year) + "," + title + "," + str(((int)(id_flow)) + 1) + "," + col[4] + "," + day)
-        for i in direction2:
-            w.write("," + str(((int)(i))))
-    else:
-        print('2017 error')
-        print("ERROR HERE")
-        return -1
-
-
-def parse_2019(line, w, re_formated_Processed_dir):
-    year = 2019  # Edson: I added this line, check if its correct
-    splitted = line.split(",")
-    if len(splitted) == 2:
-        id_flow, title = splitted
-    else: 
-        id_flow, title = splitted[0], splitted[1]
-    title = title.replace('\n', '')
-    filename = os.path.splitext(title)[0]    #get_file_name(title)
-    
-    # Don't parse files known to be erroneous
-    if filename in ERRONEOUS_FILES:
-        print("file not processed: ", filename)  
-        return
-
-    if title == '':
-        return
-
-    if ".pdf" in title:
-        data = pd.read_csv(re_formated_Processed_dir + "/City/" + str(year) + " reformat/Format from pdf/" + title.split('.p')[0] + ".csv")
-        day = data['Day'][0]
-        direction = data['Count'].to_numpy()
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + title.split('.p')[0][-2:] + "," + day)
-        for i in direction:
-            w.write("," + str(((int)(i))))
-    elif ".x" in title:
-        data = pd.read_csv(re_formated_Processed_dir + "/City/" + str(year) + " reformat/Format from xlsx/" + title.split('.x')[0] + ".csv")
-        col = data.columns
-        day = data[col[6]][0]
-        for c in data.columns:
-            if (data[c].sum() == 0):
-                data = data.drop(columns=c)
-        col = data.columns
-        direction1 = data[col[2]].to_numpy()[:data[col[2]].count()]
-        direction2 = data[col[3]].to_numpy()[:data[col[3]].count()]
-        w.write("\n" + str(year) + "," + title + "," + id_flow + "," + col[2] + "," + day)
-        for i in direction1:
-            w.write("," + str(((int)(i))))
-        w.write("\n" + str(year) + "," + title + "," + str(((int)(id_flow)) + 1) + "," + col[3] + "," + day)
-        for i in direction2:
-            w.write("," + str(((int)(i))))
-    else:
-        print('2019 error')
-        print(line)
-        print("ERROR HERE")
-        return -1
 
 def parse_PeMS(line, w, PeMs_dir):
     splitted = line.split(",")
@@ -304,6 +146,7 @@ def process_data_City(Processed_dir, re_formated_Processed_dir):
                 flow_information['Day 1'] = file_day_one
                 to_be_concatenated.append(flow_information)
     df_total = pd.concat(to_be_concatenated, ignore_index=True)
+    
 
     legend = []
     for k in range(3):
@@ -312,6 +155,7 @@ def process_data_City(Processed_dir, re_formated_Processed_dir):
                 legend = legend + ["Day " + str(k + 1) + " - " + str(i) + ":" + str(15 * j)]
                 
     City_legend = legend + ['Id', 'Direction', 'year', 'Name', 'Day 1']
+    df_total = df_total.dropna(axis=1, how='all')
     df_total.columns = City_legend
     df_total.dropna(subset=legend, how = 'all', inplace=True)
     df_total.reset_index(drop=True, inplace=True)
