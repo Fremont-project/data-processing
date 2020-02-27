@@ -147,7 +147,7 @@ def doc_file_testing(file_path, year):
         
         expected_total_sum = sum(expected_sum)
         real_total_sum = int(info_day[2].split("=")[1])
-        #set the boundary for the test
+        #set the boundary for the test: arbitrarily set it to be 15
         if debug == True:
             print("expected_sum" + str(expected_total_sum))
             print("real_total_sum " + str(real_total_sum))
@@ -258,19 +258,33 @@ def parse_adt_as_dataframe(file_path, year):
         dfs[sheet_name] = xls_file.parse(sheet_name)
     
     if year==2013:
-        # print(file_path)
-        # if file_path.split("/")[-1] == 'WB Washington Blvd at Gallegos.xls':
-        #     print(dfs['Input'])
-        return parse_excel_2013(dfs)
+        try:
+            processed_frame = parse_excel_2013(dfs)
+        except ValueError:
+            print(file_path)
+        return processed_frame
         
     if year==2015:
-        return parse_excel_2015(dfs)
+        try:
+            processed_frame = parse_excel_2015(dfs)
+        except ValueError:
+            print(file_path)
+        return processed_frame
         
     if year==2017:
-        return parse_excel_2017(dfs)
+        try:
+            processed_frame = parse_excel_2017(dfs)
+        except ValueError:
+            print(file_path)
+        return processed_frame
         
     if year==2019:
-        return parse_excel_2019(dfs)
+        try:
+            processed_frame = parse_excel_2019(dfs)
+        except ValueError:
+            print(file_path)
+        return processed_frame
+
 
 def parse_excel_2013(dfs):
     """ 
@@ -286,20 +300,25 @@ def parse_excel_2013(dfs):
     tmp_df_2 = tmp_df_2[['Unnamed: 1', 'TIME', 'NB', 'SB', 'EB', 'WB']]
     tmp_df_2['Date'] = tmp_df_2['Unnamed: 1'].astype(str) + ' ' + tmp_df_2['TIME']
     tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB', 'EB', 'WB']]
-    #tmp_df_2[pd.isnull(tmp_df_2['NB']) or pd.isnull(tmp_df_2['SB'] or pd.isnull(tmp_df_2['EB'] or pd.isnull(tmp_df_2['WB']))]
     
-    if math.isnan(tmp_df_2['NB'][4]):
-        tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
-        curr_count = tmp_df_2.shape[0]
-        tmp_df_2.drop(tmp_df_2.tail(curr_count - 288).index,inplace=True)
-        #tmp_df_2.dropna(subset=['EB'], inplace=True)
-        #tmp_df_2.dropna(subset=['WB'], inplace=True)
-    else:
-        tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
-        curr_count = tmp_df_2.shape[0]
-        tmp_df_2.drop(tmp_df_2.tail(curr_count - 288).index,inplace=True)
-        #tmp_df_2.dropna(subset=['NB'], inplace=True)
-        #tmp_df_2.dropna(subset=['SB'], inplace=True)
+    cols = ['NB', 'SB', 'EB', 'WB']
+    to_be_removed = []
+    for col in cols:
+        if tmp_df_2[[col]].isnull().all().all():
+            to_be_removed.append(col)
+    main_list = ['Date'] + list(set(cols) - set(to_be_removed))
+    tmp_df_2 = tmp_df_2[main_list]
+    tmp_df_2.dropna(subset=list(set(cols) - set(to_be_removed)), inplace=True)
+
+    # if tmp_df_2[['NB', 'SB']].isnull().all().all():
+    #     tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
+        
+    # elif tmp_df_2[['WB', 'EB']].isnull().all().all():
+    #     tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
+    # else:
+    #     #print(tmp_df_2)
+    #     raise ValueError('this 2013 file has four non-NaN directions')
+    
 
     return tmp_df_2
 
@@ -317,14 +336,17 @@ def parse_excel_2015(dfs):
     os.remove("test_tmp.csv")
     tmp_df_2 = tmp_df_2[['Unnamed: 1', 'Northbound', 'Southbound', 'Eastbound', 'Westbound']]
     tmp_df_2 = tmp_df_2.rename(columns={'Unnamed: 1': 'Date', 'Northbound': 'NB', 'Southbound': 'SB', 'Eastbound': 'EB', 'Westbound': "WB"})
-    if math.isnan(tmp_df_2['NB'][4]):
+    #tmp_df_2 = tmp_df_2.loc[:, (tmp_df_2 != 0).any(axis=0)]
+    
+    if tmp_df_2[['NB', 'SB']].isnull().all().all():
         tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
-        tmp_df_2.dropna(subset=['EB', 'WB'], inplace=True)
-        #tmp_df_2.dropna(how='all', inplace=True)
-    else:
+        
+    elif tmp_df_2[['WB', 'EB']].isnull().all().all():
         tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
-        tmp_df_2.dropna(subset=['NB', 'SB'], inplace=True)
-        #tmp_df_2.dropna(subset=['SB'], inplace=True)
+        
+    else:
+        raise ValueError('this 2015 file has four non-NaN directions')
+        
     return tmp_df_2
 
 
@@ -343,9 +365,10 @@ def parse_excel_2017(dfs):
     tmp_df_2 = tmp_df_2.drop(['5'], axis=1)
     tmp_df_2 = tmp_df_2.rename(columns={'Date': 'date'})
     tmp_df_2['Date'] = tmp_df_2['date'].apply(lambda x: x.split(" ")[0]) + ' ' + tmp_df_2['Time']
-    # tmp_df_2 = tmp_df_2.drop('data', 1)
+
     cols = list(tmp_df_2.columns.values)
     tmp_df_2 = tmp_df_2[[cols[-1], cols[2], cols[3]]]
+    tmp_df_2 = tmp_df_2.loc[:, (tmp_df_2 != 0).any(axis=0)]
     return tmp_df_2
 
 def parse_excel_2019(dfs):
@@ -362,6 +385,7 @@ def parse_excel_2019(dfs):
     # rename columns accordingly
     # (matching was done visually printing the data frames and matching to xls data)
     # print(Input1)
+
     tmp_df_2 = tmp_df_2.rename(columns={'Unnamed: 25': 'time',
                                     'Unnamed: 26': 'NB', 'Unnamed: 27': 'SB',
                                     'Unnamed: 28': 'EB', 'Unnamed: 29': 'WB'})
@@ -369,11 +393,7 @@ def parse_excel_2019(dfs):
     tmp_df_2['Date'] = tmp_df_2['date'].astype(str) + ' ' + tmp_df_2['time'].astype(str) 
 
     tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB', 'EB', 'WB']]
-
-    if math.isnan(tmp_df_2['NB'][4]):
-        tmp_df_2 = tmp_df_2[['Date', 'EB', 'WB']]
-    else:
-        tmp_df_2 = tmp_df_2[['Date', 'NB', 'SB']]
+    tmp_df_2 = tmp_df_2.loc[:, (tmp_df_2 != 0).any(axis=0)]
     return tmp_df_2
 
 
@@ -530,6 +550,7 @@ def get_main_road_info_2013(in_folder, file_name):
         cross_road = Input[city][1]
         city = city.split(",")[0]  # Fremont, CA -> Fremont
         cross1, cross2 = get_cross_roads_2013(cross_road)
+
         main_road_info = (file_name, city, main_road, cross_road, cross1, cross2)
         return main_road_info
     else:
@@ -731,6 +752,7 @@ def google_doc_generater(Processed_dir):
     PeMS_section = PeMS_section[PeMS_section['Year'].apply(lambda x: x == 2013)]
     PeMS_section["Name"] = PeMS_section["Name"].apply(lambda x: x.split(" ")[-1])
     ids = []
+
     for i in range(len(PeMS_section)):
         detector_id = PeMS_section.iloc[i]
         ids.append(id_counter)
@@ -769,12 +791,11 @@ def google_doc_generater(Processed_dir):
     df4.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
     df5.to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
 
-
-
 def flow_processed_generater(Processed_dir):
     """
     This script create an updated version of Flow_processed_tmp.csv
     """
+
     error_id = [12, 60, 61, 62, 63, 64]
     path = Processed_dir
     all_files = glob.glob(path + "/*.csv")
@@ -853,6 +874,172 @@ def flow_processed_generater(Processed_dir):
     df3.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
     df4.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
     df5.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+
+
+def flow_processed_generater1(Processed_dir, re_formated_Processed_dir):
+    """
+    This script create an updated version of Flow_processed_tmp.csv
+    """
+    error_id = [12, 61, 62, 63, 64]
+    path = Processed_dir
+    all_files = glob.glob(path + "/*.csv")
+    li = []
+    id_counter = 1
+    to_be_concatenated = [] # initialize a list of pandas dataframes that are transposed processed files
+
+    for filename in all_files:
+        
+        curr_year = (filename.split("/")[-1]).split("_")[0]
+        if filename.split("/")[-1] in ['2013_info_coor.csv', '2017_info_coor.csv', '2019_info_coor.csv']:
+            #print(curr_year)
+            curr_opening = "./" + curr_year + " ADT Data"
+            df = pd.read_csv(filename, index_col=None, header=0)
+            df = df.sort_values(df.columns[0], ascending = True)
+            df = df.reset_index(drop=True)
+
+            curr_year_dir = Processed_dir + "/" + str(curr_year) + " processed"
+            ids = []
+            for i in range(len(df['Name'])):
+                ids.append(id_counter)
+                
+                if os.path.splitext(df['Name'][i])[-1] in ['.xlsx', '.xls', '.pdf', '.doc']:
+                    file_name = ''.join(os.path.splitext(df['Name'][i])[0:-1]) + '.csv'
+                else:
+                    file_name = df['Name'][i] + '.csv'  #os.path.splitext(df['Name'][i])[0] + '.csv' 
+                #print(file_name)
+                input_file = pd.read_csv(curr_year_dir + "/" + file_name)
+                file_day_one = input_file['Date'].apply(lambda x: x.split(" ")[0])[0]
+                #(curr_year == '2017' or curr_year == '2019') and 
+                if (('WB' in file_name) or ('EB' in file_name) or ('NB' in file_name) or ('SB' in file_name)):
+                    
+                    if 'Count' in input_file.columns: #check whether the raw data comes from a doc file
+                        one_direction = input_file.transpose().iloc[[1], :]
+                        file_direction = file_name.split(".")[0].split(" ")[-1]
+                    elif len(input_file.columns) == 3:
+                        one_direction = input_file.transpose().iloc[[2], :]
+                        file_direction = file_name.split(".")[0].split(" ")[0]
+                    else: 
+                        raise ValueError("check with " + str(file_name))
+                    flow_information = one_direction
+                    flow_information['Id'] = id_counter
+                    id_counter += 1
+                    while id_counter in error_id:
+                        id_counter += 1
+                    flow_information['Direction'] = file_direction #two_directions.index.tolist()
+                else:
+                    #print(input_file.transpose().shape)
+                    two_directions = input_file.transpose().iloc[[2, 3], :]
+                    flow_information = two_directions
+                    flow_information['Id'] = [id_counter, id_counter + 1]
+                    id_counter += 2
+                    while id_counter in error_id:
+                        id_counter += 1
+                    flow_information['Direction'] = two_directions.index.tolist()
+
+                flow_information['year'] = curr_year
+                flow_information['Name'] = file_name
+                flow_information['Day 1'] = file_day_one
+                to_be_concatenated.append(flow_information)
+            df.insert(0,'Id',ids)
+            header = {'Id':'Id', 'Name':curr_opening, 'Main road':'Main road', 'Cross road':'Cross road', 'Start lat':'Start lat', 'Start lng':'Start lng', 'End lat':'End lat', 'End lng':'End lng'}
+            df['Id'] = ids
+            df = df.rename(columns={'Name': curr_opening})
+            df =  df[['Id', curr_opening]]
+            li.append(df)
+
+    # For PeMS:
+    PeMS_file = path + "/" + 'Flow_processed_all.csv'
+    df = pd.read_csv(PeMS_file, index_col=None, header=0)
+    PeMS_section = df[df['Name'].apply(lambda x: x.split(" ")[0] == "PeMS")]
+    PeMS_section = PeMS_section[PeMS_section['Year'].apply(lambda x: x == 2013)]
+    PeMS_section["Name"] = PeMS_section["Name"].apply(lambda x: x.split(" ")[-1])
+    ids = []
+    for i in range(len(PeMS_section)):
+        detector_id = PeMS_section.iloc[i]
+        ids.append(id_counter)
+        id_counter += 1
+    PeMS_section = PeMS_section[["Name"]]
+    PeMS_section.insert(0,'Id',ids)
+    PeMS_section = PeMS_section.rename(columns={'Name': "PeMS"})
+    li.append(PeMS_section)  
+
+    #for 2015
+    for filename in all_files:
+        curr_year = (filename.split("/")[-1]).split("_")[0]
+        curr_year_dir = Processed_dir + "/" + str(curr_year) + " processed"
+        # print("currently parsing: ...")
+        # print(filename.split("/")[-1])
+
+        curr_year = (filename.split("/")[-1]).split("_")[0]
+        if filename.split("/")[-1] in ['2015_info_coor.csv']:
+            curr_opening = "./" + curr_year + " ADT Data"
+            df = pd.read_csv(filename, index_col=None, header=0)
+            df = df.sort_values(df.columns[0], ascending = True)
+            df = df.reset_index(drop=True)
+            r = np.arange(len(df)).repeat(2)
+            df = pd.DataFrame(df.values[r], df.index[r], df.columns)
+            df = df.reset_index(drop=True)
+            ids = []
+            for i in range(len(df['Name'])):
+                if i % 2 == 0:
+                    ids.append(id_counter)
+                    ids.append(id_counter+1)
+                    #file_name = os.path.splitext(df['Name'][i])[0] + '.csv' 
+                    if os.path.splitext(df['Name'][i])[-1] in ['.xlsx', '.xls', '.pdf', '.doc']:
+                        file_name = ''.join(os.path.splitext(df['Name'][i])[0:-1]) + '.csv'
+                    else:
+                        file_name = df['Name'][i] + '.csv'  #os.path.splitext(df['Name'][i])[0] + '.csv' 
+                    input_file = pd.read_csv(curr_year_dir + "/" + file_name)
+                    file_day_one = input_file['Date'][0].split(" ")[0]
+
+                    two_directions = input_file.transpose().iloc[[2, 3], :]
+                    flow_information = two_directions
+                    flow_information['Id'] = [id_counter, id_counter + 1]
+                    id_counter += 2
+                    flow_information['Direction'] = two_directions.index.tolist()
+                    flow_information['year'] = curr_year
+                    flow_information['Name'] = file_name
+                    flow_information['Day 1'] = file_day_one
+                    to_be_concatenated.append(flow_information)
+
+                    file_name = df['Name'][i]
+                
+                #id_counter += 1
+            df.insert(0,'Id',ids)
+            header = {'Id':'Id', 'Name':curr_opening, 'Main road':'Main road', 'Cross road':'Cross road', 'Start lat':'Start lat', 'Start lng':'Start lng', 'End lat':'End lat', 'End lng':'End lng'}
+            df['Id'] = ids
+            df = df.rename(columns={'Name': curr_opening})
+            df =  df[['Id', curr_opening]]
+            li.append(df)
+
+    df1,df2, df3, df4, df5  = li[0], li[1], li[2], li[3], li[4]
+
+    df1.to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False)
+    df2.to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+    df3.to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+    df4.to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+    df5.to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+
+    df_total = pd.concat(to_be_concatenated, ignore_index=True)
+    legend = []
+    for k in range(3):
+        for i in range(24):
+            for j in range(4):
+                legend = legend + ["Day " + str(k + 1) + " - " + str(i) + ":" + str(15 * j)]
+
+    City_legend = legend + ['Id', 'Direction', 'year', 'Name', 'Day 1']
+    
+    #df_total.to_csv(re_formated_Processed_dir + '/Flow_processed_city.csv')
+
+    df_total = df_total.dropna(axis=1, how='all')
+    df_total.reset_index(drop=True, inplace=True)
+    df_total.columns = City_legend
+    #df_total['Id'] = df_total.index
+
+    cols = df_total.columns.tolist()
+    cols = cols[-5:] + cols[0:-5]
+    df_total = df_total[cols]
+    df_total.to_csv(re_formated_Processed_dir + "/Flow_processed_city.csv")
 
 
 
