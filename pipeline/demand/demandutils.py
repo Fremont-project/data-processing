@@ -4,7 +4,7 @@ from geovoronoi import coords_to_points, points_to_coords, voronoi_regions_from_
 from geovoronoi.plotting import subplot_for_map, plot_voronoi_polys_with_points_in_area
 
 
-def add_point_geometry(df, lng_column='start_node_lng', lat_column='start_node_lat', geometry_column='geometry', crs_degree={'init': 'epsg:4326'}):
+def add_point_geometry(df, lng_column='start_node_lng', lat_column='start_node_lat', geometry_column='geometry', crs='epsg:4326'):
     """
     Add a new Point geometry column
     Parameters
@@ -27,7 +27,7 @@ def add_point_geometry(df, lng_column='start_node_lng', lat_column='start_node_l
     from shapely.geometry import Point
     points = [Point(xy) for xy in zip(df[lng_column], df[lat_column])]
 
-    gdf = GeoDataFrame(df, crs=crs_degree, geometry=points)
+    gdf = GeoDataFrame(df, crs=crs, geometry=points)
     gdf = gdf.rename(columns={'geometry': geometry_column}
                      ).set_geometry(geometry_column)
     return gdf
