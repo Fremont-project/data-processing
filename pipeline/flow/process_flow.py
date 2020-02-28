@@ -3,9 +3,8 @@ import numpy as np
 import os
 from pathlib import Path
 
-
-
 def parse_PeMS(line, w, PeMs_dir):
+    # interpret the line
     splitted = line.split(",")
     if len(splitted) == 2:
         id_flow, id_pems = splitted
@@ -14,12 +13,13 @@ def parse_PeMS(line, w, PeMs_dir):
     id_pems = id_pems.replace('\n', '')
     data_flow = ""
     w.write("\nPeMS Detector " + id_pems + "," + id_flow)
-    
+
     for year in [2013, 2015, 2017, 2019]:
         if (id_flow != "") and (id_pems != ""): 
+            # get the directory to raw PeMS file and read into dataframe
             excel_dir = PeMs_dir + "/PeMS_" + str(year) + "/" + id_pems + "_" + str(year) + ".xlsx"
-            #print(excel_dir)
             xl_file = pd.ExcelFile(excel_dir)
+            # dictionary of every sheet_name --> actual parsed sheet
             dfs = {sheet_name: xl_file.parse(sheet_name)
                    for sheet_name in xl_file.sheet_names}
             data = dfs['Report Data']
@@ -107,6 +107,8 @@ def process_data(Processed_dir, re_formated_Processed_dir, PeMs_dir):
 
 def process_data_City(Processed_dir, re_formated_Processed_dir):
     """
+    *** might be unneeded anymore ***
+    *** merged to preprocess_flow.flow_processed_generater1 ***
     Updated scripts to generated "Flow_processed_city.csv" containing combined city flow data for all year
     """
     input_files_excel = os.listdir(Processed_dir)
@@ -193,7 +195,7 @@ def proces_data_PeMS(Processed_dir, re_formated_Processed_dir, PeMs_dir):
     """
     curr_file = open(re_formated_Processed_dir + "/" + "Flow_processed_tmp.csv", "r", encoding= 'unicode_escape')#encoding='utf-8-sig').strip()
     w2 = open(re_formated_Processed_dir + "/" +'Flow_processed_PeMS.csv', 'w')
-    # legend for pems csv
+    # generate legend for pems csv
     legend2 = "Name,Id,Name PeMS,Observed 2013,Day 2013,Observed 2015,Day 2015,Observed 2017,Day 2017, Observed 2019,Day 2019"
     for year in [2013, 2015, 2017, 2019]:
         for k in range(3):
@@ -224,12 +226,19 @@ def proces_data_PeMS(Processed_dir, re_formated_Processed_dir, PeMs_dir):
     w2.close()
 
 def ids_extraction(re_formated_Processed_dir):
-
+    """
+    *** Might be unuseful anymore given the previous merging of flow_processed_generater and process_flow.process_data_City***
+    extracting the ids of detectors/PeMS by year from tmp file out 
+    and writing the ids to dictionary {ids}: mapping year/PeMS to [id]
+    """
     curr_file = open(re_formated_Processed_dir + "/" + "Flow_processed_tmp.csv", "r", encoding= 'unicode_escape')
     ids = {}
     curr_year = 0
     curr_year_ids = []
     for line in curr_file:
+        #read through each line of the tmp file
+
+        #determine which section (year/PeMS) that current line belongs to and write the ids to corresponding list in {ids}
         if line.split(",")[1][0:4] == "PeMS":
             ids["PeMS"] = []
             continue
