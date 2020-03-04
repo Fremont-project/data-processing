@@ -9,7 +9,7 @@ from datetime import datetime
 import glob
 import csv
 import re
-
+import fnmatch
 
 API_KEY = "AIzaSyB8rJhDsfwvIod9jVTfFm1Dtv2eO4QWqxQ"
 GOOGLE_MAPS_URL = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -519,9 +519,6 @@ def get_geo_data(year, Input_dir, Processed_dir):
     coordinate_file.close()
 
 
-
-
-
 def get_main_road_info_2013(in_folder, file_name):
     """
     get the main road info from file name for year 2013
@@ -532,11 +529,14 @@ def get_main_road_info_2013(in_folder, file_name):
     """
     if debug:
         print(file_name)
-    _, file_ext = os.path.splitext(file_name)
-    is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
-    if (file_ext == '.xls' or file_ext == '.xlsx') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
+    base_file_name, file_ext = os.path.splitext(file_name)
+    if ('$' not in file_name and '.DS_Store' not in file_name):
         # read excel data into dataframe
-        xls_file = pd.ExcelFile(in_folder + file_name)
+        xls_path =  in_folder + base_file_name + '.xls'
+        if not os.path.exists(xls_path):
+            xls_path = in_folder + base_file_name + '.xlsx'
+
+        xls_file = pd.ExcelFile(xls_path)
         dfs = {}
         for sheet_name in xls_file.sheet_names:
             dfs[sheet_name] = xls_file.parse(sheet_name)
@@ -558,7 +558,7 @@ def get_main_road_info_2013(in_folder, file_name):
 def get_cross_roads_2013(cross):
     """ 
     get the cross road information of every detector for 2013:
-    
+
     Example: 
     - Between Arapaho and Paseo Padre -> Arapaho, Paseo Padre
     - 200' s/o Starlite -> Starlite
@@ -575,7 +575,6 @@ def get_cross_roads_2013(cross):
     return cross1, cross2
 
 
-
 def get_main_road_info_2015(file_name):
     """
     Extract the main road info from file name for year 2015
@@ -587,11 +586,11 @@ def get_main_road_info_2015(file_name):
     """
     _, file_ext = os.path.splitext(file_name)
     is_folder = os.path.isdir(os.getcwd() + '/' + file_name)
-    #check whether this is a legit raw file
-    if (file_ext == '.xls' or file_ext == '.xlsx') and ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
+    # check whether this is a legit raw file
+    if ('$' not in file_name and '.DS_Store' not in file_name and not is_folder):
         if debug:
             print(file_name)
-        # extract the main road and crossroad information from the file name by splitting 
+        # extract the main road and crossroad information from the file name by splitting
         main_road = file_name.split('betw.')[0].strip()
         cross = file_name.split('betw.')[1].strip()[:-4]
         cross1 = cross.split('and')[0].strip()
@@ -602,7 +601,6 @@ def get_main_road_info_2015(file_name):
 
 
 def get_main_road_info_2017(file_name):
-
     """
     Get 2017 main road info from file name
 
@@ -611,11 +609,10 @@ def get_main_road_info_2017(file_name):
     file_name = mission blvd S OF washington blvd signal
     output = (file_name, city, main_road, cross_road, cross1, cross2)
     """
-    file_name, file_ext = os.path.splitext(file_name)
-    name = file_name.title()
+    base_file_name, file_ext = os.path.splitext(file_name)
+    name = base_file_name.title()
     city = 'Fremont'
     main_road_info = None
-
 
     of_directions = ['S Of', 'E Of', 'W Of', 'N Of']
     for of in of_directions:
@@ -626,11 +623,11 @@ def get_main_road_info_2017(file_name):
         main_road = name.split('Bt')[0].strip()
         cross_road = name.split('Bt')[1].strip()
 
-        #remove_direction
-        cross1 = (cross_road.split('And')[0].replace('Nb', '').replace('Sb', '')\
-        .replace('Eb', '').replace('Wb', '')).strip()
-        cross2 = (cross_road.split('And')[1].replace('Nb', '').replace('Sb', '')\
-        .replace('Eb', '').replace('Wb', '')).strip()
+        # remove_direction
+        cross1 = (cross_road.split('And')[0].replace('Nb', '').replace('Sb', '') \
+                  .replace('Eb', '').replace('Wb', '')).strip()
+        cross2 = (cross_road.split('And')[1].replace('Nb', '').replace('Sb', '') \
+                  .replace('Eb', '').replace('Wb', '')).strip()
         main_road_info = (file_name, city, main_road, cross_road, cross1, cross2)
     elif Direction_b:
         # Ex2: mission blvd S OF washington blvd signal
@@ -640,8 +637,8 @@ def get_main_road_info_2017(file_name):
             .replace('Signal', '') \
             .replace('Stop Sign', '') \
             .strip()
-        cross1 = cross_road.replace('Nb', '').replace('Sb', '')\
-        .replace('Eb', '').replace('Wb', '')
+        cross1 = cross_road.replace('Nb', '').replace('Sb', '') \
+            .replace('Eb', '').replace('Wb', '')
         main_road_info = (file_name, city, main_road, cross_road, cross1, None)
     else:
         raise (Exception('Unable to parse main road info from 2017 file name: %s' % file_name))
@@ -650,7 +647,6 @@ def get_main_road_info_2017(file_name):
 
 
 def get_main_road_info_2019(file_name):
-
     """
     Get 2019 main road info from file name
     input: file_name, examples below 
@@ -658,26 +654,26 @@ def get_main_road_info_2019(file_name):
     file_name = AUTO MALL PKWY BT FREMONT BLVD AND I-680 EB
     output = (file_name, city, main_road, cross_road, cross1, cross2)
     """
-    file_name, _ = os.path.splitext(file_name)
-    name = file_name.title()
+    base_file_name, _ = os.path.splitext(file_name)
+    name = base_file_name.title()
     city = 'Fremont'
 
     for splitter in ['Bt', 'Bet.']:
         if splitter in name:
             bt = splitter
 
-    #bt = find_splitter(name, ['Bt', 'Bet.'])
+    # bt = find_splitter(name, ['Bt', 'Bet.'])
     main_road = name.split(bt)[0].strip()
     cross_road = name.split(bt)[1].strip()
 
     for splitter in ['And', '&']:
         if splitter in cross_road:
             And = splitter
-    #And = find_splitter(cross_road, ['And', '&'])
-    cross1 = (cross_road.replace('Nb', '').replace('Sb', '')\
-        .replace('Eb', '').replace('Wb', '')).split(And)[0].strip()
-    cross2 = (cross_road.replace('Nb', '').replace('Sb', '')\
-        .replace('Eb', '').replace('Wb', '')).split(And)[1].strip()
+    # And = find_splitter(cross_road, ['And', '&'])
+    cross1 = (cross_road.replace('Nb', '').replace('Sb', '') \
+              .replace('Eb', '').replace('Wb', '')).split(And)[0].strip()
+    cross2 = (cross_road.replace('Nb', '').replace('Sb', '') \
+              .replace('Eb', '').replace('Wb', '')).split(And)[1].strip()
 
     main_road_info = (file_name, city, main_road, cross_road, cross1, cross2)
     return main_road_info
@@ -706,6 +702,179 @@ def get_coords_from_address(address):
     if debug:
         print('address w coord lat, lng', address, str(lat), str(lng))
     return lat, lng
+
+
+def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
+    """
+    Creates file flow_processed_city.csv and year_info.csv for year=[2013, 2015, 2017, 2019] 
+      in output_dir directory
+
+    :param processed_dir: directory containing directories 'year processed' for each year
+        and those folders contain flow data in .csv files (one csv per road section)
+    :return: creates files as described above 
+    """
+    csv_lines = []  # lines to be written to csv
+
+    # create legend
+    legend = ['Name', 'Direction', 'Id', 'year', 'Day 1']
+    days, hours, timestep = 3, 24, 15
+    for day in range(days):
+        for hr in range(hours):
+            for min in range(0, 60, timestep):
+                legend.append('Day %s - %s:%s' % (day + 1, hr, min))
+    csv_lines.append(legend)
+
+    # read flow data from processed folders 'year processed'
+    years = ['2013', '2015', '2017', '2019']
+    all_directions = ['NB', 'SB', 'EB', 'WB']
+    year_file_name_to_detector_id = {}
+    for year in years:
+        processed_folder = processed_dir + ('%s processed' % year)
+        files = os.listdir(processed_folder)
+        files = [f for f in files if fnmatch.fnmatch(f, '*.csv')]
+        files.sort()
+        for idx, file_name in enumerate(files):
+            # read data
+            flow_data_df = pd.read_csv(processed_folder + '/' + file_name)
+
+            # get directions
+            directions = [col for col in flow_data_df.columns if col in all_directions]
+            if not directions:
+                # if direction not found, attempt to find it in file name
+                base_name = os.path.splitext(file_name)[0]  # remove .csv extension
+                directions = [word.strip() for word in base_name.split(' ') if word.strip() in all_directions]
+                if not directions:
+                    raise (ValueError('Cant find direction column in file: ' + file_name))
+
+            # get detector id and day 1
+            detector_id = '0' + str(idx + 1) if idx + 1 < 10 else str(idx + 1)
+            detector_id = year + detector_id  # we desire to create a detector id in this format
+            day_1 = flow_data_df['Date'][0].split(' ')[0]
+
+            # store detector id assigned to this file and year
+            year_file_name_to_detector_id[(year, file_name)] = detector_id
+
+            # create csv line for each direction
+            for direction in directions:
+                # name, direction, id, year, day 1
+                csv_line = [file_name, direction, detector_id, year, day_1]
+                # flow data from day 1 - 0:0 to day 3 - 23:45
+                if direction in flow_data_df.columns:
+                    csv_line.extend(flow_data_df[direction].values)
+                else:
+                    csv_line.extend(flow_data_df['Count'].values)
+
+                csv_lines.append(csv_line)
+
+    # create csv output file
+    flow_processed_city = open(output_dir + 'flow_processed_city.csv', 'w')
+    for line in csv_lines:
+        line = ','.join(str(x) for x in line)
+        flow_processed_city.write(line + '\n')
+    flow_processed_city.close()
+
+    # now create year_info.csv for year=[2013, 2015, 2017, 2019]
+    for year in years:
+        csv_lines = []  # lines to be written to csv
+
+        # get files for this year
+        processed_folder = processed_dir + ('%s processed' % year)
+        files = os.listdir(processed_folder)
+        files = [f for f in files if fnmatch.fnmatch(f, '*.csv')]
+
+        # get main road info for address lookup to get lat and long
+        for file_name in files:
+            if year == '2013':
+                main_road_info = get_main_road_info_2013(raw_2013_folder, file_name)
+            elif year == '2015':
+                main_road_info = get_main_road_info_2015(file_name)
+            elif year == '2017':
+                main_road_info = get_main_road_info_2017(file_name)
+            elif year == '2019':
+                main_road_info = get_main_road_info_2019(file_name)
+            else:
+                raise (Exception('Unable to get main road info for file: %s' % file_name))
+
+            file_name, city, main_road, cross_road, cross1, cross2 = main_road_info
+            detector_id = year_file_name_to_detector_id.get((year, file_name))
+
+            # get lat and long coordinates for detector using its address (main road info)
+            csv_line = None
+            if cross1 and cross2:
+                lat1, lng1 = get_coords_from_address(main_road + ' & ' + cross1 + ', ' + city)
+                lat2, lng2 = get_coords_from_address(main_road + ' & ' + cross2 + ', ' + city)
+                csv_line = [file_name, city, detector_id, main_road, cross_road, str(lat1), str(lng1),
+                            str(lat2), str(lng2)]
+            elif cross1:
+                lat, lng = get_coords_from_address(main_road + ' & ' + cross1 + ', ' + city)
+                csv_line = [file_name, city, detector_id, main_road, cross_road, str(lat), str(lng)]
+            else:
+                raise (Exception('Unable to get coordinates for main road of file %s' % file_name))
+            csv_lines.append(csv_line)
+
+        # create year_info.csv for this year
+        year_info_csv = open(output_dir + year + '_info.csv', 'w')
+        legend = ['Name', 'City', 'ID', 'Main road', 'Cross road', 'Start lat', 'Start lng', 'End lat',
+                  'End lng']
+        year_info_csv.write(','.join(legend) + '\n')
+        for line in csv_lines:
+            year_info_csv.write(','.join(line) + '\n')
+        year_info_csv.close()
+
+
+def flow_processed_generator_pems(processed_dir, output_dir):
+    """
+    Creates file flow_processed_pems.csv in output_dir directory
+
+    :param processed_dir: directory containing directories 'PeMS_year' for year=2013, 2015, 2017, 2019 
+        and those folders contain flow data in .xlsx files (one file per road section)
+    :return: creates flow_processed_pems.csv as described above
+    """
+    csv_lines = []  # lines to be written to csv
+
+    # create legend
+    legend = ['Year', 'Name', 'Id', '%Observed', 'Day 1']
+    days, hours, timestep = 3, 24, 5
+    for day in range(days):
+        for hr in range(hours):
+            for min in range(0, 60, timestep):
+                legend.append('Day %s - %s:%s' % (day + 1, hr, min))
+    csv_lines.append(legend)
+
+    # read flow data from processed folders 'year processed'
+    years = ['2013', '2015', '2017', '2019']
+    for year in years:
+        pems_year_folder = processed_dir + 'PeMS_' + year
+        files = os.listdir(pems_year_folder)
+        files = [f for f in files if fnmatch.fnmatch(f, '*.xlsx') and '$' not in f]
+        for file_name in files:
+            # get name and detector id
+            base_name = os.path.splitext(file_name)[0]  # remove .xlsx
+            detector_id = base_name.split('_')[0]
+            name = 'PeMS Detector ' + detector_id
+
+            # get observed, day1 and flow data
+            data_flow_df = pd.read_excel(pems_year_folder + '/' + file_name)
+            if data_flow_df.empty:
+                observed = 'Did not exist in ' + year
+                day1 = 'X'
+                flow = ''  # empty place holder
+            else:
+                observed = data_flow_df['% Observed'][0]
+                day1 = str(data_flow_df['5 Minutes'][0]).split(' ')[0]
+                flow = data_flow_df['Flow (Veh/5 Minutes)'].values
+
+            csv_line = [year, name, detector_id, observed, day1]
+            csv_line.extend(flow)
+
+            csv_lines.append(csv_line)
+
+    # create csv output file
+    flow_processed_pems = open(output_dir + 'flow_processed_pems.csv', 'w')
+    for line in csv_lines:
+        line = ','.join(str(x) for x in line)
+        flow_processed_pems.write(line + '\n')
+    flow_processed_pems.close()
 
 
 def google_doc_generater(Processed_dir):
@@ -908,7 +1077,7 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
             df = df.sort_values(df.columns[0], ascending = True)
             #sort the dataframe by file_name to match the google doc
             df = df.reset_index(drop=True)
-            curr_year_dir = Processed_dir + "/" + str(curr_year) + " processed"
+            curr_year_dir = re_formated_Processed_dir + "/" + str(curr_year) + " processed"
             ids = [] #list of IDs for tmp file
             for i in range(len(df['Name'])):
                 ids.append(id_counter)
@@ -917,22 +1086,22 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
                 if os.path.splitext(df['Name'][i])[-1] in ['.xlsx', '.xls', '.pdf', '.doc']:
                     file_name = ''.join(os.path.splitext(df['Name'][i])[0:-1]) + '.csv'
                 else:
-                    file_name = df['Name'][i] + '.csv'  #os.path.splitext(df['Name'][i])[0] + '.csv' 
-                #read the processed csv file for this detector 
+                    file_name = df['Name'][i] + '.csv'  #os.path.splitext(df['Name'][i])[0] + '.csv'
+                #read the processed csv file for this detector
                 input_file = pd.read_csv(curr_year_dir + "/" + file_name)
                 file_day_one = input_file['Date'].apply(lambda x: x.split(" ")[0])[0]
                 #extract the Date, year, etc information from the processed csv
-                
-                # if 
+
+                # if
                 if (('WB' in file_name) or ('EB' in file_name) or ('NB' in file_name) or ('SB' in file_name)):
-                    
+
                     if 'Count' in input_file.columns: #check whether the raw data comes from a doc file
                         one_direction = input_file.transpose().iloc[[1], :]
                         file_direction = file_name.split(".")[0].split(" ")[-1] #if from doc, then the direction info would be at the last of the file_name
                     elif len(input_file.columns) == 3: # if not from doc file, then file_direction is at the first
                         one_direction = input_file.transpose().iloc[[2], :]
                         file_direction = file_name.split(".")[0].split(" ")[0]
-                    else: 
+                    else:
                         raise ValueError("check with " + str(file_name))
                     flow_information = one_direction
                     flow_information['Id'] = id_counter
@@ -961,8 +1130,8 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
             df =  df[['Id', curr_opening]]
             li.append(df)
 
-    # For PeMS: 
-    #similar code from before. Getting the PeMS section from Flow_processed_all.csv and process. We might need better ways to do it. 
+    # For PeMS:
+    #similar code from before. Getting the PeMS section from Flow_processed_all.csv and process. We might need better ways to do it.
 #     PeMS_file = path + "/" + 'Flow_processed_all.csv'
 #     df = pd.read_csv(PeMS_file, index_col=None, header=0)
 #     PeMS_section = df[df['Name'].apply(lambda x: x.split(" ")[0] == "PeMS")]
@@ -976,7 +1145,7 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
 #     PeMS_section = PeMS_section[["Name"]]
 #     PeMS_section.insert(0,'Id',ids)
 #     PeMS_section = PeMS_section.rename(columns={'Name': "PeMS"})
-#     li.append(PeMS_section)  
+#     li.append(PeMS_section)
 
     #for 2015 --> similar formatting as 2013, 2017 and 2019 but by default assume two direction for every file
     for filename in all_files:
@@ -1002,7 +1171,7 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
                     if os.path.splitext(df['Name'][i])[-1] in ['.xlsx', '.xls', '.pdf', '.doc']:
                         file_name = ''.join(os.path.splitext(df['Name'][i])[0:-1]) + '.csv'
                     else:
-                        file_name = df['Name'][i] + '.csv'  #os.path.splitext(df['Name'][i])[0] + '.csv' 
+                        file_name = df['Name'][i] + '.csv'  #os.path.splitext(df['Name'][i])[0] + '.csv'
                     input_file = pd.read_csv(curr_year_dir + "/" + file_name)
                     file_day_one = input_file['Date'][0].split(" ")[0]
 
@@ -1034,7 +1203,7 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
 #     li[4].to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
 
     df_total = pd.concat(to_be_concatenated, ignore_index=True)
-    #generate the legend for the dataframe: from Day1 0:00 to Day3 11:45pm. 
+    #generate the legend for the dataframe: from Day1 0:00 to Day3 11:45pm.
     legend = []
     for k in range(3):
         for i in range(24):
@@ -1042,12 +1211,12 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
                 legend = legend + ["Day " + str(k + 1) + " - " + str(i) + ":" + str(15 * j)]
 
     City_legend = legend + ['Id', 'Direction', 'year', 'Name', 'Day 1']
-    
-    #many of the processed files have many NaN rows at the tail. Then, we drop all the NaN columns (after transpose) first before reset column names and indexes. 
+
+    #many of the processed files have many NaN rows at the tail. Then, we drop all the NaN columns (after transpose) first before reset column names and indexes.
     df_total = df_total.dropna(axis=1, how='all')
     df_total.reset_index(drop=True, inplace=True)
     df_total.columns = City_legend
-    
+
 
     cols = df_total.columns.tolist()
     #reorder the columns to match the expected file
