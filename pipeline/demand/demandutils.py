@@ -48,6 +48,7 @@ def neighborhoods_touching_internal_legs(neighborhood_path, points_gdf_path, out
     int_neighborhood_names = _get_internal_neighborhoods(points_gdf_path, neighborhood_path)
 
     points_gdf = gpd.GeoDataFrame.from_file(points_gdf_path)
+    points_gdf = points_gdf.to_crs('epsg:4326')
 
     int_neighborhoods = gpd.GeoDataFrame()
 
@@ -248,6 +249,8 @@ def _get_internal_neighborhoods(leg_path, neighborhood_path):
     import geopandas as gpd
 
     nodes = gpd.GeoDataFrame.from_file(leg_path)
+    nodes = nodes.to_crs('epsg:4326')
+
     neighborhoods = gpd.GeoDataFrame.from_file(neighborhood_path)
     neighborhoods = neighborhoods.to_crs('epsg:4326')
 
