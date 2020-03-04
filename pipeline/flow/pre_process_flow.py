@@ -799,7 +799,7 @@ def google_doc_generater(Processed_dir):
     li[1].to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
     li[2].to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
     li[3].to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
-    li[04].to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
+    li[4].to_csv(Processed_dir + "/flowing_out.csv", encoding='utf-8', index=False, mode='a')
 
 def flow_processed_generater(Processed_dir):
     """
@@ -887,14 +887,13 @@ def flow_processed_generater(Processed_dir):
     df5.to_csv(Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
 
 
-def flow_processed_generater1(Processed_dir, re_formated_Processed_dir):
+def flow_processed_generater1(path, re_formated_Processed_dir):
     """
     *** NEW Version that merges flow_processed_generater and process_flow.process_data_City ***
 
     This script create an updated version of Flow_processed_tmp.csv and generating (re_formated_Processed_dir + '/Flow_processed_city.csv')
     """
     error_id = [12, 61, 62, 63, 64]
-    path = Processed_dir
     all_files = glob.glob(path + "/*.csv")
     li = []
     id_counter = 1
@@ -911,7 +910,7 @@ def flow_processed_generater1(Processed_dir, re_formated_Processed_dir):
             df = df.reset_index(drop=True)
             curr_year_dir = Processed_dir + "/" + str(curr_year) + " processed"
             ids = [] #list of IDs for tmp file
-             for i in range(len(df['Name'])):
+            for i in range(len(df['Name'])):
                 ids.append(id_counter)
 
                 #extract the file_name (detector name) from year_info_coor file and find the processed csv file for that detector
@@ -964,25 +963,25 @@ def flow_processed_generater1(Processed_dir, re_formated_Processed_dir):
 
     # For PeMS: 
     #similar code from before. Getting the PeMS section from Flow_processed_all.csv and process. We might need better ways to do it. 
-    PeMS_file = path + "/" + 'Flow_processed_all.csv'
-    df = pd.read_csv(PeMS_file, index_col=None, header=0)
-    PeMS_section = df[df['Name'].apply(lambda x: x.split(" ")[0] == "PeMS")]
-    PeMS_section = PeMS_section[PeMS_section['Year'].apply(lambda x: x == 2013)]
-    PeMS_section["Name"] = PeMS_section["Name"].apply(lambda x: x.split(" ")[-1])
-    ids = []
-    for i in range(len(PeMS_section)):
-        detector_id = PeMS_section.iloc[i]
-        ids.append(id_counter)
-        id_counter += 1
-    PeMS_section = PeMS_section[["Name"]]
-    PeMS_section.insert(0,'Id',ids)
-    PeMS_section = PeMS_section.rename(columns={'Name': "PeMS"})
-    li.append(PeMS_section)  
+#     PeMS_file = path + "/" + 'Flow_processed_all.csv'
+#     df = pd.read_csv(PeMS_file, index_col=None, header=0)
+#     PeMS_section = df[df['Name'].apply(lambda x: x.split(" ")[0] == "PeMS")]
+#     PeMS_section = PeMS_section[PeMS_section['Year'].apply(lambda x: x == 2013)]
+#     PeMS_section["Name"] = PeMS_section["Name"].apply(lambda x: x.split(" ")[-1])
+#     ids = []
+#     for i in range(len(PeMS_section)):
+#         detector_id = PeMS_section.iloc[i]
+#         ids.append(id_counter)
+#         id_counter += 1
+#     PeMS_section = PeMS_section[["Name"]]
+#     PeMS_section.insert(0,'Id',ids)
+#     PeMS_section = PeMS_section.rename(columns={'Name': "PeMS"})
+#     li.append(PeMS_section)  
 
     #for 2015 --> similar formatting as 2013, 2017 and 2019 but by default assume two direction for every file
     for filename in all_files:
         curr_year = (filename.split("/")[-1]).split("_")[0]
-        curr_year_dir = Processed_dir + "/" + str(curr_year) + " processed"
+        curr_year_dir = path + "/" + str(curr_year) + " processed"
         # print("currently parsing: ...")
         # print(filename.split("/")[-1])
 
@@ -1027,11 +1026,12 @@ def flow_processed_generater1(Processed_dir, re_formated_Processed_dir):
 
     #df1,df2, df3, df4, df5  = li[0], li[1], li[2], li[3], li[4]
 
+    print(len(li))
     li[0].to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False)
     li[1].to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
     li[2].to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
     li[3].to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
-    li[4].to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
+#     li[4].to_csv(re_formated_Processed_dir + "/processed_flow_tmp.csv", encoding='utf-8', index=False, mode='a')
 
     df_total = pd.concat(to_be_concatenated, ignore_index=True)
     #generate the legend for the dataframe: from Day1 0:00 to Day3 11:45pm. 
@@ -1057,7 +1057,7 @@ def flow_processed_generater1(Processed_dir, re_formated_Processed_dir):
 
 
 
-def Speed_data_parser(speed_data_dir, Processed_dir):
+def speed_data_parser(speed_data_dir, Processed_dir):
     """
     This scripts parse the speed data 2015
     Input: Kimley_Horn_flow_dir, Processed_dir
