@@ -37,18 +37,18 @@ def add_point_geometry(input_path, output_path, lng_column='lng', lat_column='la
     gdf.to_file(output_path)
 
 
-def neighborhoods_touching_internal_legs(neighborhood_path, points_gdf_path, output_path):
+def neighborhoods_touching_internal_legs(neighborhoods_path, points_gdf_path, output_path):
     import geopandas as gpd
 
-    neighborhoods_shp = GeoDataFrame.from_file(neighborhood_path)
+    neighborhoods_shp = GeoDataFrame.from_file(neighborhoods_path)
     neighborhoods_shp = neighborhoods_shp.to_crs('epsg:4326')
 
     assert(neighborhoods_shp.crs == 'epsg:4326'),'Neighborhoods shapefile Coordinate Reference System missmatch! CRS is not EPSG:4326.'
 
-    int_neighborhood_names = _get_internal_neighborhoods(points_gdf_path, neighborhood_path)
-
     points_gdf = gpd.GeoDataFrame.from_file(points_gdf_path)
     points_gdf = points_gdf.to_crs('epsg:4326')
+
+    int_neighborhood_names = _get_internal_neighborhoods(points_gdf, neighborhoods_shp)
 
     int_neighborhoods = gpd.GeoDataFrame()
 
@@ -60,18 +60,21 @@ def neighborhoods_touching_internal_legs(neighborhood_path, points_gdf_path, out
     int_neighborhoods.to_file(output_path)
 
 
-def geovor_in_neighborhoods_random_points(neighborhood_path, points_gdf_path, output_path):
+def geovor_in_neighborhoods_random_points(neighborhoods_path, points_gdf_path, output_path):
     import numpy as np
     import geopandas as gpd
 
     np.random.seed(123)
 
-    neighborhoods_shp = GeoDataFrame.from_file(neighborhood_path)
+    neighborhoods_shp = GeoDataFrame.from_file(neighborhoods_path)
     neighborhoods_shp = neighborhoods_shp.to_crs('epsg:4326')
 
     assert(neighborhoods_shp.crs == 'epsg:4326'),'Neighborhoods shapefile Coordinate Reference System missmatch! CRS is not EPSG:4326.'
 
-    int_neighborhoods = _get_internal_neighborhoods(points_gdf_path, neighborhood_path)
+    nodes = gpd.GeoDataFrame.from_file(points_gdf_path)
+    nodes = nodes.to_crs('epsg:4326')
+
+    int_neighborhoods = _get_internal_neighborhoods(nodes, neighborhoods_shp)
 
     partitioned_neighborhood_centroids = gpd.GeoDataFrame()
 
@@ -86,21 +89,24 @@ def geovor_in_neighborhoods_random_points(neighborhood_path, points_gdf_path, ou
             new_row = {'CentroidID':int(init_centroid_index), 'centroid_lng':pp.centroid.x, 'centroid_lat':pp.centroid.y, 'NeighborhoodID':neighborhood_id, 'neighborhood_name':neighborhood_name, 'geometry':pp}
             partitioned_neighborhood_centroids = partitioned_neighborhood_centroids.append(new_row, ignore_index=True)
 
+    partitioned_neighborhood_centroids.crs = 'epsg:4326'
+
     print('Created {x} centroids within {y} neighborhoods.'.format(x=repr(len(partitioned_neighborhood_centroids)), y=repr(len(int_neighborhoods['NAME'].unique()))))
     partitioned_neighborhood_centroids.to_csv(output_path)
 
 
-def geovor_in_neighborhoods_real_points(neighborhood_path, points_gdf_path, output_path):
+def geovor_in_neighborhoods_real_points(neighborhoods_path, points_gdf_path, output_path):
     import geopandas as gpd
 
-    neighborhoods_shp = GeoDataFrame.from_file(neighborhood_path)
+    neighborhoods_shp = GeoDataFrame.from_file(neighborhoods_path)
     neighborhoods_shp = neighborhoods_shp.to_crs('epsg:4326')
 
     assert(neighborhoods_shp.crs == 'epsg:4326'),'Neighborhoods shapefile Coordinate Reference System missmatch! CRS is not EPSG:4326.'
 
-    int_neighborhoods = _get_internal_neighborhoods(points_gdf_path, neighborhood_path)
-
     points_gdf = gpd.GeoDataFrame.from_file(points_gdf_path)
+    points_gdf = points_gdf.to_crs('epsg:4326')
+
+    int_neighborhoods = _get_internal_neighborhoods(points_gdf, neighborhoods_shp)
 
     partitioned_neighborhood_centroids = gpd.GeoDataFrame()
 
@@ -109,7 +115,7 @@ def geovor_in_neighborhoods_real_points(neighborhood_path, points_gdf_path, outp
     for neighborhood_index, neighborhood_name in enumerate(int_neighborhoods['NAME'].unique()):
         neighborhood_id = neighborhoods_shp.loc[neighborhood_index]['OBJECTID']
         poly_shapes, pts, poly_to_pt_assignments = _voronoi_within_neighborhood_from_real_points(
-            neighborhoods_shp, neighborhood_name, points_gdf.geometry, n_points=15)
+            neighborhoods_shp, neighborhood_name, points_gdf, n_points=15)
 
         for index, pp in enumerate(poly_shapes):
             init_centroid_index += 1
@@ -192,20 +198,22 @@ def _spatial_join_nodes_with_neighborhoods(gdf, neighborhoods, how='left', op='w
     return gdf_to_join
 
 def _voronoi_within_neighborhood_from_real_points(gdf, neighborhood_name, real_points, n_points=10, epsg=4326):
+    from shapely.ops import cascaded_union
     area = gdf[gdf.NAME == neighborhood_name]
 
     area = area.to_crs(epsg=epsg)
-    area_shape = area.iloc[0].geometry
+    area_shape = cascaded_union(area.geometry)
 
-    pts_count = len(real_points)
+    points = real_points[real_points.geometry.within(area_shape)]
+
+    pts_count = len(points)
 
     if (n_points < pts_count):
         filter_count = n_points
     else:
         filter_count = pts_count
 
-    print(real_points[:filter_count].head())
-    point_coords = points_to_coords(real_points[:filter_count])
+    point_coords = points_to_coords(points[:filter_count].geometry)
 
     # calculate the Voronoi regions, cut them with the geographic area shape and assign the points to them
     poly_shapes, pts, poly_to_pt_assignments = voronoi_regions_from_coords(
@@ -245,17 +253,7 @@ def _voronoi_within_neighborhood_from_random_points(gdf, neighborhood_name, n_po
     return poly_shapes, pts, poly_to_pt_assignments
 
 
-def _get_internal_neighborhoods(leg_path, neighborhood_path):
-    import geopandas as gpd
-
-    nodes = gpd.GeoDataFrame.from_file(leg_path)
-    nodes = nodes.to_crs('epsg:4326')
-
-    neighborhoods = gpd.GeoDataFrame.from_file(neighborhood_path)
-    neighborhoods = neighborhoods.to_crs('epsg:4326')
-
-    assert(neighborhoods.crs == 'epsg:4326'),'Neighborhoods shapefile Coordinate Reference System missmatch! CRS is not EPSG:4326.'
-
+def _get_internal_neighborhoods(nodes, neighborhoods):
     internal_neighborhoods = _spatial_join_nodes_with_neighborhoods(nodes, neighborhoods, how='inner', op='intersects')
     internal_neighborhoods = internal_neighborhoods[['REGION','NAME','OBJECTID']]
     return internal_neighborhoods
