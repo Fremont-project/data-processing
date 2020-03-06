@@ -1008,7 +1008,7 @@ def parse_2017(line, w, Processed_dir):
 
 
 def parse_2019(line, w, re_formated_Processed_dir):
-    year = 2019  # Edson: I added this line, check if its correct
+    year = 2019
     splitted = line.split(",")
     if len(splitted) == 2:
         id_flow, title = splitted
