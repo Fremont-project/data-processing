@@ -3,6 +3,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plot
 from shapely import wkt
 import keplergl as kp
+import numpy as np
 
 # Aimsum sections to detectors
 # Name of columns in all output csv files
@@ -11,13 +12,9 @@ DETECTOR_ID_NAME = 'Detector_Id'
 DISTANCE_NAME = 'Distance'
 
 
-def create_flow_processed_section():
-
-    pass
-
 def streetlines_to_detectors(dir_streetline, dir_detectors, dir_output):
     """
-    Create lines_to_detectors.csv file where each row is a street light with a corresponding closest 
+    Create lines_to_detectors.csv file where each row is a street line with a corresponding closest 
      detector for each year and pems. Desired columns for output file are: 
      OBJECTID, Shape_Length, Name, Direction, 2013, 2015, 2017, 2019, PeMS.
      Where Name is the streetline name and years/pems are the detector ids.
@@ -42,29 +39,48 @@ def streetlines_to_detectors(dir_streetline, dir_detectors, dir_output):
 
     # main idea: iterate through all detectors for all years
     streetline_to_all_detectors_dic = {}
+    object_id_to_pems_distance = {}
     for year, detectors_df in dic_detectors_df.items():
-        detector_year_to_streetline_df = join_detector_to_nearest_road(detectors_df, streetline_df,
-                                                              search_dist=0.3, report_dist=True)
+        detector_year_to_streetline_df, _ = join_detector_to_nearest_road(detectors_df, streetline_df,
+                                                              search_dist=1e-4, report_dist=True)
 
         for _, row_for_year in detector_year_to_streetline_df.iterrows():
             object_id = row_for_year['OBJECTID'] # used as identifier of a streetline
 
+            if np.isnan(object_id):
+                continue # if detector is not assigned to a streetline, skip it
+
             # create copy and get desired data
             row_for_year = pd.Series(row_for_year)
-            row_for_year = row_for_year.drop(['geometry', DISTANCE_NAME])
             row_for_year = row_for_year.rename({DETECTOR_ID_NAME: year})
-            row_for_year[year] = str(int(row_for_year[year]))
+            row_for_year[year] = str(int(row_for_year[year])) # detector id
+            # drop undesired columns
+            # row_for_year = row_for_year.drop(['geometry', DISTANCE_NAME])
+            row_for_year = row_for_year.drop(['geometry'])
 
             # if streetline has been seen before append detector id else add it as a new row
             if object_id in streetline_to_all_detectors_dic:
                 row_all_years = streetline_to_all_detectors_dic[object_id]
                 if year in row_all_years:
                     # year seen before, multiple detectors to one streetline for this year
-                    row_all_years[year] += ' - ' + row_for_year[year]
+
+                    # handle pems manually, multiple pems detectors assigned to one streetline
+                    # with near zero distance <1e-6, taking the detector with smallest distance is the right one
+                    # if interested, multiple pems detectors assigned to one road can be found in duplicates_pems.csv
+                    # in the output folder
+                    if year == 'pems':
+                        if row_for_year[DISTANCE_NAME] < object_id_to_pems_distance[object_id]:
+                            row_all_years[year] = row_for_year[year]
+                            object_id_to_pems_distance[object_id] = row_for_year[DISTANCE_NAME]
+                    else:
+                        # year seen before, multiple detectors to one streetline for this year
+                        row_all_years[year] += ' - ' + row_for_year[year]
                 else:
                     # new year not seen before
                     row_all_years[year] = row_for_year[year]
             else:
+                if year == 'pems':
+                    object_id_to_pems_distance[object_id] = row_for_year[DISTANCE_NAME]
                 streetline_to_all_detectors_dic[object_id] = row_for_year
 
     # creat dataframe to write to csv
@@ -86,7 +102,7 @@ def detectors_to_road_segments(year, dir_section, dir_detectors, dir_output):
     
     :return: Writes a detectors_to_road_segments_year.csv file as described above.  
     """
-    print('\ncreating detectors_to_road_segments_%s.csv' % str(year))
+    print('\nCreating detectors_to_road_segments_%s.csv' % str(year))
     # aimsum (has linestring geometry)
     sections_df = load_section_data(dir_section + "sections.shp")
     print('number of road segments', sections_df.shape[0])
@@ -95,15 +111,25 @@ def detectors_to_road_segments(year, dir_section, dir_detectors, dir_output):
     detectors_df = load_detector_data(dir_detectors + get_shape_file_name(year))
     print('number of detectors', detectors_df.shape[0])
 
-    detectors_to_roads_df = join_detector_to_nearest_road(detectors_df, sections_df, search_dist=0.03, report_dist=True)
+    report_distance = False
+    search_dist = 1e-4
+    detectors_to_roads_df, detectors_wout_roads_df = join_detector_to_nearest_road(detectors_df, sections_df,
+                                                          search_dist=search_dist, report_dist=report_distance)
     # drop columns and rearrange as desired
     detectors_to_roads_df = detectors_to_roads_df.drop(columns=['geometry'])
-    detectors_to_roads_df = detectors_to_roads_df[[DETECTOR_ID_NAME, ROAD_ID_NAME, DISTANCE_NAME]]
+    if report_distance:
+        detectors_to_roads_df = detectors_to_roads_df[[DETECTOR_ID_NAME, ROAD_ID_NAME, DISTANCE_NAME]]
+    else:
+        detectors_to_roads_df = detectors_to_roads_df[[DETECTOR_ID_NAME, ROAD_ID_NAME]]
     # writ to csv
     detectors_to_roads_df.to_csv(dir_output + 'detectors_to_road_segments_%s.csv' % str(year), index=False)
+    if not detectors_wout_roads_df.empty:
+        print('Detectors w/out road assignment found, with search radius of ' + str(search_dist))
+        print('Writing detectors_without_road_segments_%s.csv' % str(year))
+        detectors_wout_roads_df.to_csv(dir_output + 'detectors_without_road_segments_%s.csv' % str(year), index=False)
 
 
-def join_detector_to_nearest_road(detectors_df, sections_df, search_dist=0.03, report_dist=False):
+def join_detector_to_nearest_road(detectors_df, sections_df, search_dist=1e-4, report_dist=False):
     """
     Iterates over all detectors and finds nearest road to it spatially.
     The detectors have point geometry and road sections have line geometry, thus we for each point
@@ -125,6 +151,7 @@ def join_detector_to_nearest_road(detectors_df, sections_df, search_dist=0.03, r
 
     # geo data for accumulating results
     detectors_to_roads_df = gpd.GeoDataFrame()
+    detectors_without_roads_df = gpd.GeoDataFrame()
 
     # Iterate over points and find closest line to point
     for _, point in detectors_df.iterrows():
@@ -135,12 +162,12 @@ def join_detector_to_nearest_road(detectors_df, sections_df, search_dist=0.03, r
         # candidates is a list of geo pandas data frame
 
         if len(candidates) == 0:
-            print('\nDetector without a road segment assigned, with search radius of ' + str(search_dist))
-            print(point)
+            # print('\nDetector without a road segment assigned, with search radius of ' + str(search_dist))
+            # print(point)
             # add detector to result but it won't have a closest road
-            detectors_to_roads_df = detectors_to_roads_df.append(point)
+            # detectors_to_roads_df = detectors_to_roads_df.append(point)
+            detectors_without_roads_df = detectors_without_roads_df.append(point)
             continue
-            # raise(Exception('No road segment found for point detector %s' % point))
 
         closest_line_distance = None
 
@@ -178,7 +205,7 @@ def join_detector_to_nearest_road(detectors_df, sections_df, search_dist=0.03, r
         # append to result dataframe
         detectors_to_roads_df = detectors_to_roads_df.append(join, ignore_index=True, sort=False)
 
-    return detectors_to_roads_df
+    return detectors_to_roads_df, detectors_without_roads_df
 
 
 def find_duplicates(year, dir_sections, dir_detectors, dir_output, show_plot=False):
@@ -209,7 +236,7 @@ def find_duplicates(year, dir_sections, dir_detectors, dir_output, show_plot=Fal
     duplicates_df = find_duplicates_helper(detectors_to_roads_df, sections_df, detectors_df)
     if duplicates_df.shape[0] > 0:
         print('\nDuplicates written to duplicates_%s.csv' % str(year))
-        duplicates_df.to_csv(dir_output + 'duplicates_%s.csv' % str(year))
+        duplicates_df.to_csv(dir_output + 'duplicates_%s.csv' % str(year), index=False)
 
         # plot duplicates
         if show_plot:
@@ -289,7 +316,7 @@ def load_section_data(file_path):
     sections_df = gpd.GeoDataFrame.from_file(file_path)
     sections_df = sections_df.to_crs(epsg=4326)
     sections_df = sections_df[['eid', 'geometry']]
-    sections_df['eid'] = sections_df['eid'].astype('int32')
+    # sections_df['eid'] = sections_df['eid'].astype('int32')
     sections_df = sections_df.rename(columns={'eid': ROAD_ID_NAME})
     return sections_df
 
@@ -321,13 +348,11 @@ def get_shape_file_name(val):
 
 
 def load_streetline_data(file_path):
-    # edson here
     streetline_df = gpd.GeoDataFrame.from_file(file_path)
     streetline_df = streetline_df.to_crs(epsg=4326)
     # OBJECTID, Shape_Length, Name, Direction, 2013, 2015, 2017, 2019, PeMS.
     streetline_df = streetline_df[['OBJECTID', 'Shape_Leng', 'Name', 'Direction', 'geometry']]
     streetline_df = streetline_df.rename(columns={'Shape_Leng': 'Shape_Length'})
-    streetline_df.to_csv('streetline_test.csv')
     return streetline_df
 
 """
@@ -335,9 +360,14 @@ codes below are for local testing only
 """
 def run_detectors_to_aimsum():
     # # find road segments for detectors
-    detectors_folder = 'detectors/'
-    sections_folder = 'aimsum/'
-    output_folder = 'test_output/'
+    # detectors_folder = 'detectors/'
+    # sections_folder = 'aimsum/'
+    # output_folder = 'test_output/'
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    detectors_folder = data_process_folder + "Raw/Demand/Flow_speed/detectors/"
+    sections_folder = data_process_folder + "Raw/Network/Aimsun/"
+    output_folder = data_process_folder + "Temporary exports to be copied to processed data/Network/Infrastructure/Detectors/"
 
     detectors_to_road_segments(2013, sections_folder, detectors_folder, output_folder)
     detectors_to_road_segments(2015, sections_folder, detectors_folder, output_folder)
@@ -354,15 +384,24 @@ def run_detectors_to_aimsum():
     find_duplicates('pems', sections_folder, detectors_folder, output_folder)
 
     # visualize
-    # map = create_kepler_map(dir_sections)
+    # map = create_kepler_map(sections_folder, detectors_folder)
 
 def run_detectors_to_streetline():
-    detectors_folder = 'detectors/'
-    streetline_folder = 'streetline/'
-    output_folder = 'test_output/'
+    # detectors_folder = 'detectors/'
+    # streetline_folder = 'streetline/'
+    # output_folder = 'test_output/'
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    streetline_folder = data_process_folder + "Raw/Demand/Flow_speed/Road section/"
+    detectors_folder = data_process_folder + "Raw/Demand/Flow_speed/detectors/"
+    output_folder = data_process_folder + "Temporary exports to be copied to processed data/Network/Infrastructure/Detectors/"
 
     streetlines_to_detectors(streetline_folder, detectors_folder, output_folder)
 
+def raise_exception():
+    raise(Exception('stop here'))
 
 if __name__ == '__main__':
     run_detectors_to_streetline()
+    # run_detectors_to_aimsum()
+    pass
