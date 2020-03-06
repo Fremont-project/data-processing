@@ -890,64 +890,76 @@ def flow_processed_generator_pems(processed_dir, output_dir):
     flow_processed_pems.close()
 
 
-def create_aimsum_flow_processed_files(flow_dir):
+def create_aimsum_flow_processed_files(flow_dir, output_dir):
     """
-    Creates 4 csv files from parsing flow_processed_source.csv where source=(pems, city).
-    The created files correspond to flow data for a given year and are named flow_processed_city_year.csv 
+    Creates 4 csv files from parsing flow_processed_pems.csv flow_processed_city.csv
+    The created files correspond to flow data for a given year and are named flow_processed__year.csv 
         where year=(2013, 2015, 2017, 2019).
-    The files created are for the aimsum team, for a given source and year, the created file contains the flow data
+    The files created are for the aimsum team, the created file contains the flow data
         averaged over the 3 days of recording.
-    
-    :param flow_dir: folder containing flow_processed_source.csv where source=(pems, city).
+
+    :param flow_dir: folder containing Flow_processed/flow_processed_city and PeMS/flow_processed_pems.csv
     :return: creates files as described above
     """
-    # find flow data start index
-    filenames = ['flow_processed_city.csv', 'flow_processed_pems.csv']
-    sources = ['city', 'pems']
-    ret = [(source, file) for source, file in zip(sources, filenames) if os.path.exists(flow_dir + file)]
-    if not ret:
-        raise(Exception('Cant find either file: ' + ', '.join(filenames)))
-    source, file = ret[0]
+    # read city and pems flow data
+    city_dir = flow_dir + 'Flow_processed/'
+    pems_dir = flow_dir + 'PeMS/'
+    flow_processed_city_df = pd.read_csv(city_dir + 'flow_processed_city.csv')
+    flow_processed_pems_df = pd.read_csv(pems_dir + 'flow_processed_pems.csv')
 
-    flow_data_df = pd.read_csv(flow_dir + file)
-    flow_start_idx = [idx for idx, col in enumerate(flow_data_df.columns) if col == 'Day 1 - 0:0']
-    if not flow_start_idx:
-        raise(Exception('Cant find flow data start column: Day 1 - 0:0 in flow_processed_%s.csv' % source))
-    flow_start_idx = flow_start_idx[0]
+    # find starting column idx of flow data in the files
+    start_idx_city_flow = list(flow_processed_city_df.columns).index('Day 1 - 0:0')
+    start_idx_pems_flow = list(flow_processed_pems_df.columns).index('Day 1 - 0:0')
 
-    # read over flow data and accumulate flow data grouped by year
-    year_to_flow_data = {}
-    for _, row in flow_data_df.iterrows():
-        # get Name, Id, year, flow data
+    # parse flow data into dic per year
+    year_to_flow_data_dic = {}
+    one_day_flow_size = 24 * 60 / 15 * 3  # 24 hrs, 15min timesteps in one hr, 3 days
+    # parse city data first
+    for _, row in flow_processed_city_df.iterrows():
+        # get name, id, year, flow data
         name = row['Name']
         detector_id = row['Id']
         year = row['Year']
-        flow_data = row.to_numpy()[flow_start_idx:]
-        if source == 'city':
-            one_day_flow_size = 24 * 60 / 15 * 3  # 24 hrs, 15min timesteps in one hr, 3 days
-        elif source == 'pems':
-            one_day_flow_size = 24 * 60 / 5 * 3 # 24 hrs, 5min timesteps in one hr, 3 days
-        else:
-            raise(ValueError('User error: Unknown input source %s' % source))
+        flow_data = row.to_numpy()[start_idx_city_flow:]
+        # take flow data average over the 3 days
         flow_data = flow_data.reshape((3, int(one_day_flow_size / 3)))
-        flow_data = np.nanmean(flow_data, axis=0)  # take average over the 3 days
+        flow_data = np.nanmean(flow_data, axis=0)
 
-        if year not in year_to_flow_data:
-            year_to_flow_data[year] = []
+        if year not in year_to_flow_data_dic:
+            year_to_flow_data_dic[year] = []
 
-        flow_data = [name, detector_id, year] + list(flow_data)
-        year_to_flow_data[year].append(flow_data)
+        csv_line = [name, detector_id, year] + list(flow_data)
+        year_to_flow_data_dic[year].append(csv_line)
 
-    # write flow data to csv (one csv per year)
-    for year, flow_data in year_to_flow_data.items():
-        output_filename = ('flow_processed_%s_%s.csv' % (source, year))
+    # parse pems data
+    for _, row in flow_processed_pems_df.iterrows():
+        # get name, id, year, flow data
+        name = row['Name']
+        detector_id = row['Id']
+        year = row['Year']
+        flow_data = row.to_numpy()[start_idx_pems_flow:]
+        # pems has 5 min timesteps, format it to 15 min timesteps
+        flow_data = flow_data.reshape((int(flow_data.shape[0] / 3), 3))
+        flow_data = np.nansum(flow_data, axis=1)
+        # take flow data average over the 3 days
+        flow_data = flow_data.reshape((3, int(one_day_flow_size / 3)))
+        flow_data = np.nanmean(flow_data, axis=0)
+        csv_line = [name, detector_id, year] + list(flow_data)
+
+        if year not in year_to_flow_data_dic:
+            year_to_flow_data_dic[year] = []
+
+        year_to_flow_data_dic[year].append(csv_line)
+
+    # write to output csv file (one csv per year)
+    for year, flow_data in year_to_flow_data_dic.items():
+        output_filename = ('flow_processed_%s.csv' % year)
         print('Creating ' + output_filename)
-        output = open(flow_dir + output_filename, 'w')
+        output = open(output_dir + output_filename, 'w')
         # create legend
         legend = ['Name', 'Id', 'Year']
-        timestep = 15 if source == 'city' else 5
         for hr in range(24):
-            for minute in range(0, 60, timestep):
+            for minute in range(0, 60, 15):
                 legend.append('%s:%s' % (hr, minute))
 
         # write to file
@@ -955,6 +967,7 @@ def create_aimsum_flow_processed_files(flow_dir):
         for line in flow_data:
             output.write(','.join(str(x) for x in line) + '\n')
         output.close()
+
 
 def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output_dir):
     """
@@ -1408,10 +1421,8 @@ def run_create_aimsum_flow_processed_files():
     dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
     data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
     flow_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
-    city_dir = flow_dir + 'Flow_processed/'
-    pems_dir = flow_dir + 'PeMS/'
-    create_aimsum_flow_processed_files(city_dir)
-    create_aimsum_flow_processed_files(pems_dir)
+    create_aimsum_flow_processed_files(flow_dir)
+
 
 def run_detectors_id_change():
     dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
@@ -1431,4 +1442,5 @@ if __name__ == '__main__':
     #get_geo_data(2015)
     # run_create_aimsum_flow_processed_files()
     # run_detectors_id_change()
+    run_create_aimsum_flow_processed_files()
     pass
