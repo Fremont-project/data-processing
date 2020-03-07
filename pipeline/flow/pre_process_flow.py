@@ -10,12 +10,14 @@ import glob
 import csv
 import re
 import fnmatch
+import fiona
+import geopandas as gpd
+import time
 
 API_KEY = "AIzaSyB8rJhDsfwvIod9jVTfFm1Dtv2eO4QWqxQ"
 GOOGLE_MAPS_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
 debug = False
-
 
 
 def process_adt_data(year, Processed_dir, Input_dir):
@@ -713,10 +715,11 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
         and those folders contain flow data in .csv files (one csv per road section)
     :return: creates files as described above 
     """
+    print('Creating flow_processed_city.csv')
     csv_lines = []  # lines to be written to csv
 
     # create legend
-    legend = ['Name', 'Direction', 'Id', 'year', 'Day 1']
+    legend = ['Name', 'Direction', 'Id', 'Year', 'Day 1']
     days, hours, timestep = 3, 24, 15
     for day in range(days):
         for hr in range(hours):
@@ -733,9 +736,11 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
         files = os.listdir(processed_folder)
         files = [f for f in files if fnmatch.fnmatch(f, '*.csv')]
         files.sort()
-        for idx, file_name in enumerate(files):
+        detector_count = 1
+        for _, file_name in enumerate(files):
             # read data
             flow_data_df = pd.read_csv(processed_folder + '/' + file_name)
+            flow_data_df = flow_data_df.dropna()
 
             # get directions
             directions = [col for col in flow_data_df.columns if col in all_directions]
@@ -746,18 +751,24 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
                 if not directions:
                     raise (ValueError('Cant find direction column in file: ' + file_name))
 
-            # get detector id and day 1
-            detector_id = '0' + str(idx + 1) if idx + 1 < 10 else str(idx + 1)
-            detector_id = year + detector_id  # we desire to create a detector id in this format
+            # get day 1
             day_1 = flow_data_df['Date'][0].split(' ')[0]
-
-            # store detector id assigned to this file and year
-            year_file_name_to_detector_id[(year, file_name)] = detector_id
 
             # create csv line for each direction
             for direction in directions:
+                # create detector id
+                detector_id = '0' + str(detector_count) if detector_count < 10 else str(detector_count)
+                detector_id = year + detector_id  # we desire to create a detector id in this format
+                detector_count += 1
+
+                # store detector id assigned to this file and year
+                if (year, file_name) not in year_file_name_to_detector_id:
+                    year_file_name_to_detector_id[(year, file_name)] = []
+                year_file_name_to_detector_id[(year, file_name)].append((detector_id, direction))
+
                 # name, direction, id, year, day 1
                 csv_line = [file_name, direction, detector_id, year, day_1]
+
                 # flow data from day 1 - 0:0 to day 3 - 23:45
                 if direction in flow_data_df.columns:
                     csv_line.extend(flow_data_df[direction].values)
@@ -775,6 +786,7 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
 
     # now create year_info.csv for year=[2013, 2015, 2017, 2019]
     for year in years:
+        print('Creating %s_info.csv' % year)
         csv_lines = []  # lines to be written to csv
 
         # get files for this year
@@ -796,25 +808,25 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
                 raise (Exception('Unable to get main road info for file: %s' % file_name))
 
             file_name, city, main_road, cross_road, cross1, cross2 = main_road_info
-            detector_id = year_file_name_to_detector_id.get((year, file_name))
-
-            # get lat and long coordinates for detector using its address (main road info)
-            csv_line = None
-            if cross1 and cross2:
-                lat1, lng1 = get_coords_from_address(main_road + ' & ' + cross1 + ', ' + city)
-                lat2, lng2 = get_coords_from_address(main_road + ' & ' + cross2 + ', ' + city)
-                csv_line = [file_name, city, detector_id, main_road, cross_road, str(lat1), str(lng1),
-                            str(lat2), str(lng2)]
-            elif cross1:
-                lat, lng = get_coords_from_address(main_road + ' & ' + cross1 + ', ' + city)
-                csv_line = [file_name, city, detector_id, main_road, cross_road, str(lat), str(lng)]
-            else:
-                raise (Exception('Unable to get coordinates for main road of file %s' % file_name))
-            csv_lines.append(csv_line)
+            detector_ids_and_directions = year_file_name_to_detector_id.get((year, file_name))
+            for detector_id, direction in detector_ids_and_directions:
+                # get lat and long coordinates for detector using its address (main road info)
+                csv_line = None
+                if cross1 and cross2:
+                    lat1, lng1 = get_coords_from_address(main_road + ' & ' + cross1 + ', ' + city)
+                    lat2, lng2 = get_coords_from_address(main_road + ' & ' + cross2 + ', ' + city)
+                    csv_line = [file_name, city, detector_id, direction, main_road, cross_road, str(lat1), str(lng1),
+                                str(lat2), str(lng2)]
+                elif cross1:
+                    lat, lng = get_coords_from_address(main_road + ' & ' + cross1 + ', ' + city)
+                    csv_line = [file_name, city, detector_id, direction, main_road, cross_road, str(lat), str(lng)]
+                else:
+                    raise (Exception('Unable to get coordinates for main road of file %s' % file_name))
+                csv_lines.append(csv_line)
 
         # create year_info.csv for this year
         year_info_csv = open(output_dir + year + '_info.csv', 'w')
-        legend = ['Name', 'City', 'ID', 'Main road', 'Cross road', 'Start lat', 'Start lng', 'End lat',
+        legend = ['Name', 'City', 'ID', 'Direction', 'Main road', 'Cross road', 'Start lat', 'Start lng', 'End lat',
                   'End lng']
         year_info_csv.write(','.join(legend) + '\n')
         for line in csv_lines:
@@ -830,10 +842,12 @@ def flow_processed_generator_pems(processed_dir, output_dir):
         and those folders contain flow data in .xlsx files (one file per road section)
     :return: creates flow_processed_pems.csv as described above
     """
+    print('Creating flow_processed_pems.csv')
     csv_lines = []  # lines to be written to csv
+    flow_sum_threshold = 0
 
     # create legend
-    legend = ['Year', 'Name', 'Id', '%Observed', 'Day 1']
+    legend = ['Year', 'Name', 'Id', '%Observed', 'Day 1', 'Flow Sum']
     days, hours, timestep = 3, 24, 5
     for day in range(days):
         for hr in range(hours):
@@ -844,6 +858,7 @@ def flow_processed_generator_pems(processed_dir, output_dir):
     # read flow data from processed folders 'year processed'
     years = ['2013', '2015', '2017', '2019']
     for year in years:
+        # get xls data files
         pems_year_folder = processed_dir + 'PeMS_' + year
         files = os.listdir(pems_year_folder)
         files = [f for f in files if fnmatch.fnmatch(f, '*.xlsx') and '$' not in f]
@@ -855,19 +870,17 @@ def flow_processed_generator_pems(processed_dir, output_dir):
 
             # get observed, day1 and flow data
             data_flow_df = pd.read_excel(pems_year_folder + '/' + file_name)
-            if data_flow_df.empty:
-                observed = 'Did not exist in ' + year
-                day1 = 'X'
-                flow = ''  # empty place holder
-            else:
+            if not data_flow_df.empty:  # don't include detectors with empty data
+                # get observed, day1, flow, flow sum
                 observed = data_flow_df['% Observed'][0]
                 day1 = str(data_flow_df['5 Minutes'][0]).split(' ')[0]
                 flow = data_flow_df['Flow (Veh/5 Minutes)'].values
-
-            csv_line = [year, name, detector_id, observed, day1]
-            csv_line.extend(flow)
-
-            csv_lines.append(csv_line)
+                flow_sum = sum(flow)
+                if flow_sum > flow_sum_threshold:
+                    # create and append csv line
+                    csv_line = [year, name, detector_id, observed, day1, flow_sum]
+                    csv_line.extend(flow)
+                    csv_lines.append(csv_line)
 
     # create csv output file
     flow_processed_pems = open(output_dir + 'flow_processed_pems.csv', 'w')
@@ -875,6 +888,136 @@ def flow_processed_generator_pems(processed_dir, output_dir):
         line = ','.join(str(x) for x in line)
         flow_processed_pems.write(line + '\n')
     flow_processed_pems.close()
+
+
+def create_aimsum_flow_processed_files(flow_dir, output_dir):
+    """
+    Creates 4 csv files from parsing flow_processed_pems.csv flow_processed_city.csv
+    The created files correspond to flow data for a given year and are named flow_processed__year.csv 
+        where year=(2013, 2015, 2017, 2019).
+    The files created are for the aimsum team, the created file contains the flow data
+        averaged over the 3 days of recording.
+
+    :param flow_dir: folder containing Flow_processed/flow_processed_city and PeMS/flow_processed_pems.csv
+    :return: creates files as described above
+    """
+    # read city and pems flow data
+    city_dir = flow_dir + 'Flow_processed/'
+    pems_dir = flow_dir + 'PeMS/'
+    flow_processed_city_df = pd.read_csv(city_dir + 'flow_processed_city.csv')
+    flow_processed_pems_df = pd.read_csv(pems_dir + 'flow_processed_pems.csv')
+
+    # find starting column idx of flow data in the files
+    start_idx_city_flow = list(flow_processed_city_df.columns).index('Day 1 - 0:0')
+    start_idx_pems_flow = list(flow_processed_pems_df.columns).index('Day 1 - 0:0')
+
+    # parse flow data into dic per year
+    year_to_flow_data_dic = {}
+    one_day_flow_size = 24 * 60 / 15 * 3  # 24 hrs, 15min timesteps in one hr, 3 days
+    # parse city data first
+    for _, row in flow_processed_city_df.iterrows():
+        # get name, id, year, flow data
+        name = row['Name']
+        detector_id = row['Id']
+        year = row['Year']
+        flow_data = row.to_numpy()[start_idx_city_flow:]
+        # take flow data average over the 3 days
+        flow_data = flow_data.reshape((3, int(one_day_flow_size / 3)))
+        flow_data = np.nanmean(flow_data, axis=0)
+
+        if year not in year_to_flow_data_dic:
+            year_to_flow_data_dic[year] = []
+
+        csv_line = [name, detector_id, year] + list(flow_data)
+        year_to_flow_data_dic[year].append(csv_line)
+
+    # parse pems data
+    for _, row in flow_processed_pems_df.iterrows():
+        # get name, id, year, flow data
+        name = row['Name']
+        detector_id = row['Id']
+        year = row['Year']
+        flow_data = row.to_numpy()[start_idx_pems_flow:]
+        # pems has 5 min timesteps, format it to 15 min timesteps
+        flow_data = flow_data.reshape((int(flow_data.shape[0] / 3), 3))
+        flow_data = np.nansum(flow_data, axis=1)
+        # take flow data average over the 3 days
+        flow_data = flow_data.reshape((3, int(one_day_flow_size / 3)))
+        flow_data = np.nanmean(flow_data, axis=0)
+        csv_line = [name, detector_id, year] + list(flow_data)
+
+        if year not in year_to_flow_data_dic:
+            year_to_flow_data_dic[year] = []
+
+        year_to_flow_data_dic[year].append(csv_line)
+
+    # write to output csv file (one csv per year)
+    for year, flow_data in year_to_flow_data_dic.items():
+        output_filename = ('flow_processed_%s.csv' % year)
+        print('Creating ' + output_filename)
+        output = open(output_dir + output_filename, 'w')
+        # create legend
+        legend = ['Name', 'Id', 'Year']
+        for hr in range(24):
+            for minute in range(0, 60, 15):
+                legend.append('%s:%s' % (hr, minute))
+
+        # write to file
+        output.write(','.join(legend) + '\n')
+        for line in flow_data:
+            output.write(','.join(str(x) for x in line) + '\n')
+        output.close()
+
+
+def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output_dir):
+    """
+    Creates copy of shp files with new detector ids from flow_processed_city.csv for all 4 years.
+    
+    :param detectors_dir: folder containing all shp files for all years 
+    :param flow_processed_dir: folder containing flow_processed_city.csv
+    :param output_dir: output folder for the new updated shp files
+    """
+    flow_processed_city_df = pd.read_csv(flow_processed_dir + 'flow_processed_city.csv')
+    years = ['2013', '2015', '2017', '2019', ]
+    for year in years:
+        filename = 'location_%s_detector.shp' % year
+        shape_file = detectors_dir + filename
+        output_file = output_dir + filename
+        print('Creating copy of shape file with new detector ids: ' + filename)
+
+        # read and write shape file with fiona
+        with fiona.collection(shape_file, 'r') as input:
+            schema = input.schema.copy()
+            with fiona.collection(output_file, 'w', 'ESRI Shapefile', schema, crs=input.crs) as output:
+                for row in input:
+                    # create copy of row to avoid segmentation error
+                    row_copy = row.copy()
+                    # get Name and Direction original shape row data
+                    # and use it to get the new detector id in processed city data
+                    road_name = row['properties']['Name']
+                    direction = row['properties']['Direction']
+                    road_name = os.path.splitext(road_name)[0] + '.csv' # remove extension and add .csv
+                    matches = flow_processed_city_df[(flow_processed_city_df['Name'] == road_name) &
+                                                     (flow_processed_city_df['Direction'] == direction)]
+
+                    # if a match is found edit the detector id of row and write it to output
+                    if not matches.empty:
+                        match = matches.iloc[0]
+                        row_copy['properties']['Id'] = str(match['Id'])
+                        output.write(row_copy)
+
+                output.close()
+                output.flush()
+            input.close()
+            input.flush()
+
+    # read updated to csv to see new created shape file
+    for year in years:
+        filename = 'location_%s_detector.shp' % year
+        output_file = output_dir + filename
+        streetline_df = gpd.GeoDataFrame.from_file(output_file)
+        # streetline_df = streetline_df.to_crs(epsg=4326)
+        streetline_df.to_csv(output_dir + 'detectors_%s.csv' % year)
 
 
 def google_doc_generater(Processed_dir):
@@ -1274,11 +1417,30 @@ def speed_data_parser(speed_data_dir, Processed_dir):
     df_percent.to_csv(Processed_dir + "/" + '2015_Speed_Processed_Percent.csv')
 
 
+def run_create_aimsum_flow_processed_files():
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    flow_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
+    create_aimsum_flow_processed_files(flow_dir)
 
+
+def run_detectors_id_change():
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    detectors_folder = data_process_folder + "Raw/Demand/Flow_speed/detectors/"
+    output_folder = data_process_folder + "Raw/Demand/Flow_speed/detectors id change/"
+    flow_processed_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/Flow_processed/"
+    change_detector_ids_in_shape_files(detectors_folder, flow_processed_dir, output_folder)
 
 # for local testing only
+def raise_exception():
+    raise (Exception('stop code here'))
+
 if __name__ == '__main__':
     #process_adt_data(2015)
     #process_doc_data(2019)
     #get_geo_data(2015)
+    # run_create_aimsum_flow_processed_files()
+    # run_detectors_id_change()
+    run_create_aimsum_flow_processed_files()
     pass
