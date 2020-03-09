@@ -1421,7 +1421,8 @@ def run_create_aimsum_flow_processed_files():
     dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
     data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
     flow_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
-    create_aimsum_flow_processed_files(flow_dir)
+    create_aimsum_flow_processed_files(flow_dir, flow_dir)
+
 
 
 def run_detectors_id_change():
@@ -1442,5 +1443,5 @@ if __name__ == '__main__':
     #get_geo_data(2015)
     # run_create_aimsum_flow_processed_files()
     # run_detectors_id_change()
-    run_create_aimsum_flow_processed_files()
+    # run_create_aimsum_flow_processed_files()
     pass
