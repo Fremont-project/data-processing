@@ -836,7 +836,7 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
 
 def flow_processed_generator_pems(processed_dir, output_dir):
     """
-    Creates file flow_processed_pems.csv in output_dir directory
+    Creates file flow_processed_pems.csv in output_dir directory by parsing flow data in processed_dir folder
 
     :param processed_dir: directory containing directories 'PeMS_year' for year=2013, 2015, 2017, 2019 
         and those folders contain flow data in .xlsx files (one file per road section)
@@ -892,7 +892,7 @@ def flow_processed_generator_pems(processed_dir, output_dir):
 
 def create_aimsum_flow_processed_files(flow_dir, output_dir):
     """
-    Creates 4 csv files from parsing flow_processed_pems.csv flow_processed_city.csv
+    Creates 4 csv files from parsing flow_processed_pems.csv and flow_processed_city.csv
     The created files correspond to flow data for a given year and are named flow_processed__year.csv 
         where year=(2013, 2015, 2017, 2019).
     The files created are for the aimsum team, the created file contains the flow data

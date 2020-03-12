@@ -310,6 +310,34 @@ def create_kepler_map(dir_sections, dir_detectors, years):
     return map
 
 
+def create_kepler_map_streetline(dir_sections, dir_detectors, years):
+    """
+    Creates kepler map to be visualized in a notebook
+
+    Parameters
+    :param dir_sections: directory of sections.shp file
+    :param dir_detectors: directory of location_year_detector.shp files for all years
+    """
+    print("\nCreating Kepler Map")
+    sections_df = load_section_data(dir_sections + "Streetline.shp")
+    print('number of road segments', sections_df.shape[0])
+
+    detectors_dic = {
+        2013: load_detector_data(dir_detectors + get_shape_file_name(2013)),
+        2015: load_detector_data(dir_detectors + get_shape_file_name(2015)),
+        2017: load_detector_data(dir_detectors + get_shape_file_name(2017)),
+        2019: load_detector_data(dir_detectors + get_shape_file_name(2019)),
+        'PeMS': load_detector_data(dir_detectors + get_shape_file_name('pems'))
+    }
+
+    map = kp.KeplerGl(height=600)
+    map.add_data(data=sections_df, name='Road Sections')
+    for year in years:
+        map.add_data(data=detectors_dic[year], name='Detectors %s' % str(year))
+
+    return map
+
+
 def load_section_data(file_path):
     sections_df = gpd.GeoDataFrame.from_file(file_path)
     sections_df = sections_df.to_crs(epsg=4326)
