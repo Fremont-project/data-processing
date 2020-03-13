@@ -1,94 +1,243 @@
 import pandas as pd
 import numpy as np
 
-ERRONEOUS = ['DurhamRd I680 MissionBlv EB', 'Mission blvd Pine Washington SB']
 
-def run(line_to_detectors, flow_processed_city):
-    section = pd.read_csv(line_to_detectors)
-    flow = pd.read_csv(flow_processed_city)
-    section_no_na = section.dropna()
+def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_dir):
+    """
+    Creates flow_processed_section.csv file where one row is a road section and 
+    column data is flow for one specific day - year - 15 minute timestep. The file is created
+    using the road sections in line_to_detectors.csv and flow data in flow_processed_source.csv files
+    where source=(pems, city).
 
-    w = open('flow_processed_section.csv', 'w')
+    :param line_to_detectors_dir: directory for line_to_detectors.csv file  
+    :param flow_speed_dir: parent directory for flow_processed_source.csv files where source=(pems, city)
+    :return: writes flow_processed_section.csv as described above
+    """
+    print('\nCreating flow_processed_section.csv')
+    section_df = pd.read_csv(line_to_detectors_dir + 'lines_to_detectors.csv')
+    flow_processed_city_df = pd.read_csv(flow_speed_dir + 'Flow_processed/flow_processed_city.csv')
+    flow_processed_pems_df = pd.read_csv(flow_speed_dir + 'PeMS/flow_processed_pems.csv')
+    output = open(output_dir + 'flow_processed_section.csv', 'w')
 
-    secnp = section_no_na.to_numpy()
+    # Format pems to 15min timesteps instead of 5min
+    # create new 15min timestep flow legend for pems
+    flow_legend = []
+    num_days, num_hours, num_timesteps = 3, 24, 4
+    expected_year_flow_data_size = num_days * num_hours * num_timesteps
+    for day in range(num_days):
+        for hour in range(num_hours):
+            for timestep in range(0, 60, 15):
+                flow_legend.append('Day %s - %s:%s' % (str(day + 1), str(hour), str(timestep)))
 
-    legend_tmp = section_no_na.columns.to_numpy()
-    # print(legend_tmp)
-    legend = legend_tmp[0] + "," + legend_tmp[2] + "," + legend_tmp[3] + ",day 1 2013,day 1 2017,day 1 2019"
+    # get start index of flow
+    flow_start_index = list(flow_processed_pems_df.columns).index('Day 1 - 0:0')
+    # create rows for new pems
+    pems_flow_rows = []
+    for _, row in flow_processed_pems_df.iterrows():
+        # parse pems flow data and get columns needed
+        flow_data = row.to_numpy()[flow_start_index:]
+        # format pems to 15min timesteps instead of 5min
+        flow_data = flow_data.reshape((expected_year_flow_data_size, 3))
+        flow_data = np.nansum(flow_data, axis=1)
+        row_series_dict = {'Day 1': row['Day 1'], 'Id': str(row['Id']),
+                           'Year': row['Year'], 'Name': row['Name']}
+        row_series_dict.update(dict(zip(flow_legend, flow_data)))
+        pems_flow_rows.append(pd.Series(row_series_dict)) # much faster to create Series from dict in one go
 
-    for y in range(3):
-        if y == 0:
-            year = "2013"
-        if y == 1:
-            year = '2017'
-        if y == 2:
-            year = '2019'
-        for k in range(3):
-            for i in range(24):
-                for j in range(4):
-                    legend = legend + ",Day " + str(k + 1) + " - " + year + " - " + str(i) + ":" + str(15 * j)
-    # print(legend)
-    w.write(legend)
+    # create new pems dataframe from it to parse it
+    flow_processed_pems_df = pd.DataFrame(pems_flow_rows)
 
-    skipped_processing = []
-    for l in secnp:
-        det2013 = 0
-        det2017 = 0
-        det2019 = 0
-        print(l)
+    years = ['2013', '2015', '2017', '2019']
+    # create legend for csv output file and write to csv
+    flow_legend = []
+    for year in years:
+        for day in range(num_days):
+            for hour in range(num_hours):
+                for timestep in range(0, 60, 15):
+                    flow_legend.append('Day %s - %s - %s:%s' % (str(day + 1), str(year), str(hour), str(timestep)))
+    legend = ['OBJECTID', 'Name', 'Direction', ]
+    legend += ['Day 1 ' + year for year in years]
+    legend += flow_legend
+    output.write(','.join(legend) + '\n')
 
-        name_and_dir = get_name_and_direction(l)
-        if name_and_dir in ERRONEOUS:
-            skipped_processing.append(name_and_dir)
-            continue
+    # Fixing data: 3 road detectors were assigned to 1 streetline. Each detector represents 1 day of flow.
+    # We usually average flow data when multiple detectors are assigned to one streeline. In this case,
+    # we unroll the 3 detectors data into 3 days worth of flow.
+    # The streetlines we do this for are: Washington Mission PPP EB, Washington PPP Driscoll EB, Washington Mission.
+    streetlines_to_unroll = ['Washington Mission PPP EB', 'Washington PPP Driscoll EB', 'Washington Mission']
 
-        if "-" not in l[4]:
-            det2013 = (int)(l[4])
-            data2013 = flow[flow['Id'] == det2013].to_numpy()[0][4:]
-        if "-" not in l[5]:
-            det2017 = (int)(l[5])
-            data2017 = flow[flow['Id'] == det2017].to_numpy()[0][4:]
-        if "-" not in l[6]:
-            det2019 = (int)(l[6])
-            data2019 = flow[flow['Id'] == det2019].to_numpy()[0][4:]
-        if det2013 * det2017 * det2019 != 0:
-            print((det2013, det2017, det2019))
-            if (data2013.shape[0] != 289) or (data2017.shape[0] != 289) or (data2019.shape[0] != 289):
-                print("**** Did not process the line because not three days where recorded")
+    # Code is much cleaner if we processed city flow and pems flow separately, this is due to
+    # when querying for flow data using a city detector id it returns one year worth of flow
+    # but when querying for flow data using pems detector id it returns 4 years worth of flow at once
+    # Parse city flow first iterating through the roads
+    for _, road_section in section_df.iterrows():
+        if 'pems' in road_section['Name'].lower():
+            continue  # skip pems
+
+        all_years_data = []
+        for year in years:
+            detector_id = road_section[year]  # by user construction, detector id is in column 'year'
+
+            # if detector was not assigned for this road section and year
+            if not isinstance(detector_id, str) and np.isnan(detector_id):
+                # add empty data for ease of writing to csv
+                # expects one year of flow data and one start recording day
+                one_year_detector_data = np.full((1, expected_year_flow_data_size + 1), np.NaN)
+                all_years_data.append(one_year_detector_data)
+                continue
+
+            # multiple detectors can be assigned to one (road, year)
+            # check if only one detector was assigned. If multiple detectors assigned then detector_id = 'id1 - id2'
+            # where - is used as a delimeter for multiple detector ids
+            detector_id = str(detector_id)
+            if '-' not in detector_id:
+                # one detector was assigned for this road section
+                one_year_detector_data = parse_detector_year_data(int(float(detector_id)), flow_processed_city_df,
+                                                              year, expected_year_flow_data_size)
+                all_years_data.append(one_year_detector_data)
             else:
-                w.write("\n")
-                day2013 = data2013[0]
-                day2017 = data2017[0]
-                day2019 = data2019[0]
-                strflow = ""
-                for f in data2013[1:]:
-                    strflow += str(f) + ","
-                for f in data2017[1:]:
-                    strflow += str(f) + ","
-                for f in data2019[1:]:
-                    strflow += str(f) + ","
-                strflow = strflow[:-1]
-                strflow = day2013 + "," + day2017 + "," + day2019 + "," + strflow
-                strflow = str(l[0]) + "," + l[2] + "," + l[3] + "," + strflow
-                w.write(strflow)
-        else:
-            print('Did not process the line because of several detectors')
+                # multiple detectors assigned for this road and year, take average
+                detector_ids = [int(id.strip()) for id in detector_id.split('-')]
 
-    w.close()
+                # accumulate detector data in numpy matrix
+                detector_data_matrix = []
+                for id in detector_ids:
+                    detector_id_data = parse_detector_year_data(id, flow_processed_city_df,
+                                                                year, expected_year_flow_data_size)
+                    detector_data_matrix.append(detector_id_data.flatten())
+                detector_data_matrix = np.array(detector_data_matrix)
 
-    print("")
-    for name in skipped_processing:
-        print("skipped processing", name)
+                # streetline_name = road_section['Name']
+                # if streetline_name in streetlines_to_unroll:
+                #     print(streetline_name)
+                #     # unroll flow data to 3 days worth of flow
+                #     dates = [date for date in detector_data_matrix[:, 0]]
+                #     flows = [flow[~pd.isnull(flow)] for flow in detector_data_matrix[:, 1:]]
+                #     dates_flows = sorted(zip(dates, flows), key= lambda p: p[0])
+                #     # recording date is earliest date
+                #     recording_date = dates_flows[0][0]
+                #     print('record date', recording_date)
+                #     # concatenate flow data
+                #     for _, flow in dates_flows:
+                #         print('shapes', flow.shape)
+                #     flows = np.array([flow for _, flow in dates_flows]).flatten()
+                #     print('flow size', flows.shape)
+                #     one_year_detector_data = np.concatenate((recording_date, flows), axis=None)
+                #     one_year_detector_data = one_year_detector_data.reshape((1, one_year_detector_data.shape[0]))
+                #
+                #     raise_exception()
+                # else:
+                # get all recording dates (in first column of matrix)
+                recording_dates = ' - '.join(str(date) for date in detector_data_matrix[:, 0])
+                # average flow data row wise (2nd col and beyond of matrix)
+                mean_flow = np.nanmean(detector_data_matrix[:, 1:], axis=0)
 
-def get_name_and_direction(l):
-    name = l[2]
-    direction = l[3]
-    if direction not in name:
-        name += ' ' + direction
-    return name
+                # combine start date and flow data and add to all years list
+                one_year_detector_data = np.concatenate((recording_dates, mean_flow), axis=None)
+                one_year_detector_data = one_year_detector_data.reshape((1, one_year_detector_data.shape[0]))
+
+                all_years_data.append(one_year_detector_data)
+
+        # write all_years_data for this road section to csv output
+        # get start day of recordings and flow data
+        # (year_data is a (1, num) array where first element is recording date and rest are flow for that date/year)
+        recording_dates = [year_data[0, 0] for year_data in all_years_data]
+        flow_data = [year_data[0, 1:] for year_data in all_years_data]
+        flow_data = list(np.array(flow_data).flatten())
+
+        # write them to csv
+        csv_line = [str(road_section['OBJECTID']), road_section['Name'], road_section['Direction']]
+        csv_line += recording_dates + flow_data
+        csv_line = ','.join([str(x) for x in csv_line])
+        output.write(csv_line + '\n')
+
+    # now parse pems flow
+    for _, road_section in section_df.iterrows():
+        if 'pems' not in road_section['Name'].lower():
+            continue # skip non pems
+
+        detector_id = road_section['pems']
+
+        all_years_data_lst = []
+        # for pems, a query will return flow data for all years at once
+        all_years_data = flow_processed_pems_df[int(detector_id) == flow_processed_pems_df['Id'].astype(int)]
+        for year in years:
+            one_year_detector_data = all_years_data[int(year) == all_years_data['Year']]
+            if one_year_detector_data.empty:
+                # place holder of nans for flow data for this year
+                one_year_detector_data = np.full((expected_year_flow_data_size + 1), np.NaN)
+                all_years_data_lst.append(one_year_detector_data)
+            else:
+                # get day1 and flow data for this year
+                day1 = one_year_detector_data.iloc[0]['Day 1']
+                flow_start_index = list(one_year_detector_data.columns).index('Day 1 - 0:0')
+                one_year_detector_data = one_year_detector_data.to_numpy()[0, flow_start_index:]
+                one_year_detector_data = np.concatenate((day1, one_year_detector_data), axis=None)
+                all_years_data_lst.append(one_year_detector_data)
+
+        # get all recording dates and all flow data in a list each
+        recording_dates = [year_data[0] for year_data in all_years_data_lst]
+        flow_data = [year_data[1:] for year_data in all_years_data_lst]
+        flow_data = list(np.array(flow_data).flatten())
+
+        # write them to csv
+        csv_line = [str(road_section['OBJECTID']), road_section['Name'], road_section['Direction']]
+        csv_line += recording_dates + flow_data
+        csv_line = ','.join([str(x) for x in csv_line])
+        output.write(csv_line + '\n')
+
+    output.close()
+
+
+def parse_detector_year_data(detector_id, flow_df, year, expected_year_flow_data_size):
+    detector_year_data = flow_df[int(detector_id) == flow_df['Id'].astype(int)]
+
+    # check if flow exists
+    if detector_year_data.empty:
+        # create empty data (NaNs) for ease of writing to csv
+        # expects flow data and one start recording date for each year
+        detector_year_data = np.full((1, expected_year_flow_data_size + 1), np.NaN)
+    else:
+        # day of recording and data flow start at 4th column (0 index)
+        # get day 1
+        day1 = detector_year_data['Day 1']
+        # get detector year data (flow data)
+        data_flow_start_idx = [i for i, col in enumerate(detector_year_data.columns) if col == 'Day 1 - 0:0']
+        if not data_flow_start_idx:
+            raise(Exception('Cant find data flow start index for detector id %s' % detector_id))
+        data_flow_start_idx = data_flow_start_idx[0]
+        detector_year_data = detector_year_data.to_numpy()[:, data_flow_start_idx:]
+
+        # create day 1 as a column to concatenate, column wise, to flow data for the year
+        day1 = np.array(day1).reshape((day1.shape[0], 1))
+        detector_year_data = np.concatenate((day1, detector_year_data), axis=1)
+
+        # append the data size if less than size of one year flow data
+        flow_data_size = detector_year_data.shape[1] - 1 # subtract recording date
+        if flow_data_size < expected_year_flow_data_size:
+            padding = np.full((1, expected_year_flow_data_size - flow_data_size), np.NaN)
+            detector_year_data = np.concatenate((detector_year_data, padding), axis=1)
+            # Note to self: this actually doesn't happen, with current data this code is never reached
+        elif flow_data_size > expected_year_flow_data_size:
+            raise (ValueError('Warning: expected one year flow data size of %s '
+                              'but found a size of %s instead for year %s and '
+                              'detector id %s'
+                              % (expected_year_flow_data_size, flow_data_size, year, str(detector_id))))
+
+    return detector_year_data
+
+
+def raise_exception():
+    # easy method to stop code at some desired location
+    raise(Exception('stop code here'))
+
+def main():
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    output_folder = data_process_folder + "Auxiliary files/Network/Infrastructure/Detectors/"
+    flow_speed_folder = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
+    create_flow_processed_section(output_folder, flow_speed_folder, output_folder)
+    pass
 
 if __name__ == '__main__':
-    line_to_detectors = 'lines_to_detectors.csv'
-    flow_processed_city = 'Flow_processed_city.csv'
-    run(line_to_detectors, flow_processed_city)
-    pass
+    main()

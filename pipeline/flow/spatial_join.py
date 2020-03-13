@@ -282,7 +282,7 @@ def find_duplicates_helper(detectors_to_roads_df, sections_df, detectors_df):
     return ret_df
 
 
-def create_kepler_map(dir_sections, dir_detectors):
+def create_kepler_map(dir_sections, dir_detectors, years):
     """
     Creates kepler map to be visualized in a notebook
     
@@ -290,24 +290,50 @@ def create_kepler_map(dir_sections, dir_detectors):
     :param dir_sections: directory of sections.shp file 
     :param dir_detectors: directory of location_year_detector.shp files for all years
     """
-
     print("\nCreating Kepler Map")
     sections_df = load_section_data(dir_sections + "sections.shp")
     print('number of road segments', sections_df.shape[0])
 
-    detectors_2013_df = load_detector_data(dir_detectors + get_shape_file_name(2013))
-    detectors_2015_df = load_detector_data(dir_detectors + get_shape_file_name(2015))
-    detectors_2017_df = load_detector_data(dir_detectors + get_shape_file_name(2017))
-    detectors_2019_df = load_detector_data(dir_detectors + get_shape_file_name(2019))
-    detectors_pems_df = load_detector_data(dir_detectors + get_shape_file_name('pems'))
+    detectors_dic = {
+        2013: load_detector_data(dir_detectors + get_shape_file_name(2013)),
+        2015: load_detector_data(dir_detectors + get_shape_file_name(2015)),
+        2017: load_detector_data(dir_detectors + get_shape_file_name(2017)),
+        2019: load_detector_data(dir_detectors + get_shape_file_name(2019)),
+        'PeMS': load_detector_data(dir_detectors + get_shape_file_name('pems'))
+    }
 
     map = kp.KeplerGl(height=600)
     map.add_data(data=sections_df, name='Road Sections')
-    map.add_data(data=detectors_2013_df, name='Detectors 2013')
-    map.add_data(data=detectors_2015_df, name='Detectors 2015')
-    map.add_data(data=detectors_2017_df, name='Detectors 2017')
-    map.add_data(data=detectors_2019_df, name='Detectors 2019')
-    map.add_data(data=detectors_pems_df, name='Detectors PeMS')
+    for year in years:
+        map.add_data(data=detectors_dic[year], name='Detectors %s' % str(year))
+
+    return map
+
+
+def create_kepler_map_streetline(dir_sections, dir_detectors, years):
+    """
+    Creates kepler map to be visualized in a notebook
+
+    Parameters
+    :param dir_sections: directory of sections.shp file
+    :param dir_detectors: directory of location_year_detector.shp files for all years
+    """
+    print("\nCreating Kepler Map")
+    sections_df = load_section_data(dir_sections + "Streetline.shp")
+    print('number of road segments', sections_df.shape[0])
+
+    detectors_dic = {
+        2013: load_detector_data(dir_detectors + get_shape_file_name(2013)),
+        2015: load_detector_data(dir_detectors + get_shape_file_name(2015)),
+        2017: load_detector_data(dir_detectors + get_shape_file_name(2017)),
+        2019: load_detector_data(dir_detectors + get_shape_file_name(2019)),
+        'PeMS': load_detector_data(dir_detectors + get_shape_file_name('pems'))
+    }
+
+    map = kp.KeplerGl(height=600)
+    map.add_data(data=sections_df, name='Road Sections')
+    for year in years:
+        map.add_data(data=detectors_dic[year], name='Detectors %s' % str(year))
 
     return map
 
