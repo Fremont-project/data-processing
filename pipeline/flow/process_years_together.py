@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+DETECTOR_ID_NAME = 'Detector_Id'
+ROAD_ID_NAME = 'Road_Id'  # eid in aimsum network
 
 def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_dir):
     """
@@ -39,7 +41,7 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
         # format pems to 15min timesteps instead of 5min
         flow_data = flow_data.reshape((expected_year_flow_data_size, 3))
         flow_data = np.nansum(flow_data, axis=1)
-        row_series_dict = {'Day 1': row['Day 1'], 'Id': str(row['Id']),
+        row_series_dict = {'Day 1': row['Day 1'], DETECTOR_ID_NAME: str(row[DETECTOR_ID_NAME]),
                            'Year': row['Year'], 'Name': row['Name']}
         row_series_dict.update(dict(zip(flow_legend, flow_data)))
         pems_flow_rows.append(pd.Series(row_series_dict)) # much faster to create Series from dict in one go
@@ -107,26 +109,6 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
                     detector_data_matrix.append(detector_id_data.flatten())
                 detector_data_matrix = np.array(detector_data_matrix)
 
-                # streetline_name = road_section['Name']
-                # if streetline_name in streetlines_to_unroll:
-                #     print(streetline_name)
-                #     # unroll flow data to 3 days worth of flow
-                #     dates = [date for date in detector_data_matrix[:, 0]]
-                #     flows = [flow[~pd.isnull(flow)] for flow in detector_data_matrix[:, 1:]]
-                #     dates_flows = sorted(zip(dates, flows), key= lambda p: p[0])
-                #     # recording date is earliest date
-                #     recording_date = dates_flows[0][0]
-                #     print('record date', recording_date)
-                #     # concatenate flow data
-                #     for _, flow in dates_flows:
-                #         print('shapes', flow.shape)
-                #     flows = np.array([flow for _, flow in dates_flows]).flatten()
-                #     print('flow size', flows.shape)
-                #     one_year_detector_data = np.concatenate((recording_date, flows), axis=None)
-                #     one_year_detector_data = one_year_detector_data.reshape((1, one_year_detector_data.shape[0]))
-                #
-                #     raise_exception()
-                # else:
                 # get all recording dates (in first column of matrix)
                 recording_dates = ' - '.join(str(date) for date in detector_data_matrix[:, 0])
                 # average flow data row wise (2nd col and beyond of matrix)
@@ -160,7 +142,7 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
 
         all_years_data_lst = []
         # for pems, a query will return flow data for all years at once
-        all_years_data = flow_processed_pems_df[int(detector_id) == flow_processed_pems_df['Id'].astype(int)]
+        all_years_data = flow_processed_pems_df[int(detector_id) == flow_processed_pems_df[DETECTOR_ID_NAME].astype(int)]
         for year in years:
             one_year_detector_data = all_years_data[int(year) == all_years_data['Year']]
             if one_year_detector_data.empty:
@@ -190,7 +172,7 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
 
 
 def parse_detector_year_data(detector_id, flow_df, year, expected_year_flow_data_size):
-    detector_year_data = flow_df[int(detector_id) == flow_df['Id'].astype(int)]
+    detector_year_data = flow_df[int(detector_id) == flow_df[DETECTOR_ID_NAME].astype(int)]
 
     # check if flow exists
     if detector_year_data.empty:

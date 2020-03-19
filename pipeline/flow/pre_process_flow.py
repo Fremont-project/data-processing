@@ -18,7 +18,8 @@ API_KEY = "AIzaSyB8rJhDsfwvIod9jVTfFm1Dtv2eO4QWqxQ"
 GOOGLE_MAPS_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
 debug = False
-
+DETECTOR_ID_NAME = 'Detector_Id'
+ROAD_ID_NAME = 'Road_Id'  # eid in aimsum network
 
 def process_adt_data(year, Processed_dir, Input_dir):
     """
@@ -706,20 +707,35 @@ def get_coords_from_address(address):
     return lat, lng
 
 
-def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
+def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder, detectors_to_roads_dir):
     """
     Creates file flow_processed_city.csv and year_info.csv for year=[2013, 2015, 2017, 2019] 
-      in output_dir directory
+      in the given output_dir directory. Each row in flow_processed_city.csv is a road section
+      and the columns contain meta data and flow data for that road. Each row in year_info.csv
+      is a road section and the columns are meta data and geographical data (ie longitude and latitude).
 
-    :param processed_dir: directory containing directories 'year processed' for each year
-        and those folders contain flow data in .csv files (one csv per road section)
+    :param processed_dir: directory containing folders 'year processed' for each year
+        and those folders contain flow data in .csv files (one csv file per road section)
+    :param output_dir: output directory for created files
+    :param raw_2013_folder: directory for 2013 raw flow data files
+    :param detectors_to_roads_dir: directory for detectors_to_road_segments_year.csv files which contain
+        spatial join results to obtain road id for a given detector id
     :return: creates files as described above 
     """
     print('Creating flow_processed_city.csv')
-    csv_lines = []  # lines to be written to csv
+    # read detectors to road segments files for all years
+    years = ['2013', '2015', '2017', '2019']
+    dic_year_detector_to_road = {}
+    for year in years:
+        dic_year_detector_to_road[year] = pd.read_csv(detectors_to_roads_dir +
+                                                        'detectors_to_road_segments_' + year + '.csv')
+
+    # lines to be written to csv
+    csv_lines = []
 
     # create legend
-    legend = ['Name', 'Direction', 'Id', 'Year', 'Day 1']
+    # note: road_id is the eid from aimsum network, calling it road_id for user clarity
+    legend = ['Name', 'Direction', 'Detector_Id', 'Road_Id', 'Year', 'Day 1']
     days, hours, timestep = 3, 24, 15
     for day in range(days):
         for hr in range(hours):
@@ -728,7 +744,6 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
     csv_lines.append(legend)
 
     # read flow data from processed folders 'year processed'
-    years = ['2013', '2015', '2017', '2019']
     all_directions = ['NB', 'SB', 'EB', 'WB']
     year_file_name_to_detector_id = {}
     for year in years:
@@ -756,18 +771,28 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
 
             # create csv line for each direction
             for direction in directions:
-                # create detector id
+                # create detector id by counting
                 detector_id = '0' + str(detector_count) if detector_count < 10 else str(detector_count)
                 detector_id = year + detector_id  # we desire to create a detector id in this format
                 detector_count += 1
 
-                # store detector id assigned to this file and year
+                # save detector id and its direction dictionary with (file, year) hash
                 if (year, file_name) not in year_file_name_to_detector_id:
                     year_file_name_to_detector_id[(year, file_name)] = []
                 year_file_name_to_detector_id[(year, file_name)].append((detector_id, direction))
 
-                # name, direction, id, year, day 1
-                csv_line = [file_name, direction, detector_id, year, day_1]
+                # get road id by using spatial join results
+                road_id = ''
+                year_detector_to_road_df = dic_year_detector_to_road[year]
+                road_matches_df = year_detector_to_road_df[
+                    int(detector_id) == year_detector_to_road_df[DETECTOR_ID_NAME]
+                ]
+                if not road_matches_df.empty:
+                    road_ids = [str(dr[ROAD_ID_NAME]) for _, dr in road_matches_df.iterrows()]
+                    road_id = ' - '.join(road_ids)
+
+                # name, direction, detector id, road id, year, day 1
+                csv_line = [file_name, direction, detector_id, road_id, year, day_1]
 
                 # flow data from day 1 - 0:0 to day 3 - 23:45
                 if direction in flow_data_df.columns:
@@ -784,6 +809,9 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
         flow_processed_city.write(line + '\n')
     flow_processed_city.close()
 
+    """
+    Code to create year_info.csv files
+    """
     # now create year_info.csv for year=[2013, 2015, 2017, 2019]
     for year in years:
         print('Creating %s_info.csv' % year)
@@ -834,20 +862,27 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder):
         year_info_csv.close()
 
 
-def flow_processed_generator_pems(processed_dir, output_dir):
+def flow_processed_generator_pems(processed_dir, output_dir, detectors_to_roads_dir):
     """
-    Creates file flow_processed_pems.csv in output_dir directory by parsing flow data in processed_dir folder
+    Creates file flow_processed_pems.csv in output_dir directory by parsing flow data in processed_dir folder.
 
-    :param processed_dir: directory containing directories 'PeMS_year' for year=2013, 2015, 2017, 2019 
+    :param processed_dir: directory containing folders 'PeMS_year' for year=2013, 2015, 2017, 2019
         and those folders contain flow data in .xlsx files (one file per road section)
+    :param output_dir: directory for output file flow_processed_pems.csv
+    :param detectors_to_roads_dir: directory for detectors_to_road_segments_pems.csv file which contain
+        spatial join results to obtain road id for a given detector id
     :return: creates flow_processed_pems.csv as described above
     """
     print('Creating flow_processed_pems.csv')
     csv_lines = []  # lines to be written to csv
+    # threshold, if sum of flow data for a given detector is less or equal to threshold dont include it in output file
     flow_sum_threshold = 0
 
+    # load spatial join results from detectors_to_road_segments_pems.csv
+    detector_to_road_df = pd.read_csv(detectors_to_roads_dir + 'detectors_to_road_segments_pems.csv')
+
     # create legend
-    legend = ['Year', 'Name', 'Id', '%Observed', 'Day 1', 'Flow Sum']
+    legend = ['Year', 'Name', DETECTOR_ID_NAME, ROAD_ID_NAME, '%Observed', 'Day 1', 'Flow Sum']
     days, hours, timestep = 3, 24, 5
     for day in range(days):
         for hr in range(hours):
@@ -868,6 +903,13 @@ def flow_processed_generator_pems(processed_dir, output_dir):
             detector_id = base_name.split('_')[0]
             name = 'PeMS Detector ' + detector_id
 
+            # get road id
+            road_id = ''
+            road_matches_df = detector_to_road_df[int(detector_id) == detector_to_road_df[DETECTOR_ID_NAME]]
+            if not road_matches_df.empty:
+                road_ids = [str(road[ROAD_ID_NAME]) for _, road in road_matches_df.iterrows()]
+                road_id = ' - '.join(road_ids)
+
             # get observed, day1 and flow data
             data_flow_df = pd.read_excel(pems_year_folder + '/' + file_name)
             if not data_flow_df.empty:  # don't include detectors with empty data
@@ -878,7 +920,7 @@ def flow_processed_generator_pems(processed_dir, output_dir):
                 flow_sum = sum(flow)
                 if flow_sum > flow_sum_threshold:
                     # create and append csv line
-                    csv_line = [year, name, detector_id, observed, day1, flow_sum]
+                    csv_line = [year, name, detector_id, road_id, observed, day1, flow_sum]
                     csv_line.extend(flow)
                     csv_lines.append(csv_line)
 
@@ -914,11 +956,14 @@ def create_aimsum_flow_processed_files(flow_dir, output_dir):
     # parse flow data into dic per year
     year_to_flow_data_dic = {}
     one_day_flow_size = 24 * 60 / 15 * 3  # 24 hrs, 15min timesteps in one hr, 3 days
+
     # parse city data first
     for _, row in flow_processed_city_df.iterrows():
-        # get name, id, year, flow data
+        # get name, detector id, road id, year, flow data
         name = row['Name']
-        detector_id = row['Id']
+        detector_id = row[DETECTOR_ID_NAME]
+        direction = row['Direction']
+        road_id = row[ROAD_ID_NAME]
         year = row['Year']
         flow_data = row.to_numpy()[start_idx_city_flow:]
         # take flow data average over the 3 days
@@ -928,23 +973,30 @@ def create_aimsum_flow_processed_files(flow_dir, output_dir):
         if year not in year_to_flow_data_dic:
             year_to_flow_data_dic[year] = []
 
-        csv_line = [name, detector_id, year] + list(flow_data)
+        csv_line = [name, direction, detector_id, road_id, year] + list(flow_data)
         year_to_flow_data_dic[year].append(csv_line)
 
     # parse pems data
     for _, row in flow_processed_pems_df.iterrows():
         # get name, id, year, flow data
         name = row['Name']
-        detector_id = row['Id']
+        detector_id = row[DETECTOR_ID_NAME]
+        road_id = row[ROAD_ID_NAME]
         year = row['Year']
         flow_data = row.to_numpy()[start_idx_pems_flow:]
+
         # pems has 5 min timesteps, format it to 15 min timesteps
         flow_data = flow_data.reshape((int(flow_data.shape[0] / 3), 3))
         flow_data = np.nansum(flow_data, axis=1)
+
         # take flow data average over the 3 days
         flow_data = flow_data.reshape((3, int(one_day_flow_size / 3)))
         flow_data = np.nanmean(flow_data, axis=0)
-        csv_line = [name, detector_id, year] + list(flow_data)
+
+        # dummy direction
+        direction = ''
+
+        csv_line = [name, direction, detector_id, road_id, year] + list(flow_data)
 
         if year not in year_to_flow_data_dic:
             year_to_flow_data_dic[year] = []
@@ -957,7 +1009,7 @@ def create_aimsum_flow_processed_files(flow_dir, output_dir):
         print('Creating ' + output_filename)
         output = open(output_dir + output_filename, 'w')
         # create legend
-        legend = ['Name', 'Id', 'Year']
+        legend = ['Name', 'Direction', DETECTOR_ID_NAME, ROAD_ID_NAME,'Year']
         for hr in range(24):
             for minute in range(0, 60, 15):
                 legend.append('%s:%s' % (hr, minute))
@@ -965,6 +1017,9 @@ def create_aimsum_flow_processed_files(flow_dir, output_dir):
         # write to file
         output.write(','.join(legend) + '\n')
         for line in flow_data:
+            for i in range(len(line)):
+                if pd.isnull(line[i]):
+                    line[i] = ''
             output.write(','.join(str(x) for x in line) + '\n')
         output.close()
 
@@ -978,12 +1033,18 @@ def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output
     :param output_dir: output folder for the new updated shp files
     """
     flow_processed_city_df = pd.read_csv(flow_processed_dir + 'flow_processed_city.csv')
-    years = ['2013', '2015', '2017', '2019', ]
+
+    years = ['2013', '2015', '2017', '2019']
     for year in years:
         filename = 'location_%s_detector.shp' % year
         shape_file = detectors_dir + filename
         output_file = output_dir + filename
         print('Creating copy of shape file with new detector ids: ' + filename)
+
+        # direction fix
+        direction_remap = {'NB': 'EB', 'SB': 'WB', 'EB': 'NB', 'WB': 'SB'}
+        direction_remap_2017 = {'NB': 'WB', 'SB': 'EB', 'EB': 'SB', 'WB': 'NB'}
+        flow_city_road_names = flow_processed_city_df['Name'].str.lower()
 
         # read and write shape file with fiona
         with fiona.collection(shape_file, 'r') as input:
@@ -996,15 +1057,36 @@ def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output
                     # and use it to get the new detector id in processed city data
                     road_name = row['properties']['Name']
                     direction = row['properties']['Direction']
-                    road_name = os.path.splitext(road_name)[0] + '.csv' # remove extension and add .csv
-                    matches = flow_processed_city_df[(flow_processed_city_df['Name'] == road_name) &
-                                                     (flow_processed_city_df['Direction'] == direction)]
+                    road_name = os.path.splitext(road_name)[0] + '.csv'  # remove extension and add .csv
+                    matches = flow_processed_city_df[
+                        (flow_city_road_names == road_name.lower()) &
+                        (flow_processed_city_df['Direction'] == direction)
+                    ]
 
                     # if a match is found edit the detector id of row and write it to output
                     if not matches.empty:
                         match = matches.iloc[0]
-                        row_copy['properties']['Id'] = str(match['Id'])
+                        row_copy['properties']['Id'] = str(match[DETECTOR_ID_NAME])
                         output.write(row_copy)
+                    else:
+                        # no match, thus we assume directions are wrong
+                        # that is, we map NB <-> EB and SB <-> WB
+                        if year == '2017':
+                            direction = direction_remap_2017[direction]
+                        else:
+                            direction = direction_remap[direction]
+
+                        matches = flow_processed_city_df[
+                            (flow_city_road_names == road_name.lower()) &
+                             (flow_processed_city_df['Direction'] == direction)
+                        ]
+                        if not matches.empty:
+                            match = matches.iloc[0]
+                            row_copy['properties']['Id'] = str(match[DETECTOR_ID_NAME])
+                            output.write(row_copy)
+                        else:
+                            print('no match for road name w direction:', road_name, direction)
+
 
                 output.close()
                 output.flush()
@@ -1369,21 +1451,34 @@ def flow_processed_generater1(path, re_formated_Processed_dir):
 
 
 
-def speed_data_parser(speed_data_dir, Processed_dir):
+def speed_data_parser(speed_data_dir, output_dir):
     """
-    This scripts parse the speed data 2015
-    Input: Kimley_Horn_flow_dir, Processed_dir
+    Creates 2015_Speed_Processed_Num.csv and 2015_Speed_Processed_Percent.csv using the speed data found in
+    the speed_data_dir folder. The raw data is from Kimley_Horn_flow of year 2015
 
+    :param speed_data_dir: directory containing raw speed data from Kimley_Horn_flow
+    :param output_dir: output folder for created files
     """
+    # data frames for the two output files
     df_num = pd.DataFrame()
     df_percent = pd.DataFrame()
 
     for f in os.listdir(speed_data_dir):
-        if('xls' in f):
+        if 'xls' in f:
             # read the excel into dataframe
             input_file_all = pd.read_excel(speed_data_dir + "/" + f, sheet_name = '#2').rename(columns={'City of Fremont':'speed'})
+            length = len(input_file_all['Unnamed: 34'])
             direction_descr = input_file_all['Unnamed: 10'][15] # 17K in the excel file
             speed_limit = input_file_all['Unnamed: 34'][72]#74AI
+            start_time = input_file_all['Unnamed: 34'][length - 6]
+            end_time = input_file_all['Unnamed: 34'][length - 5]
+
+            # how i viewed the contents of the xls file
+            # print('all cols', input_file_all.columns)
+            # for col in input_file_all.columns:
+            #     print('col name', col)
+            #     print(input_file_all[col].values)
+
             if 'East' in direction_descr:
                 direction = ['EB', 'WB']
             else:
@@ -1400,21 +1495,36 @@ def speed_data_parser(speed_data_dir, Processed_dir):
             cumsum2 = series2.cumsum()
             input_file[direction[1]+'_Cum']=cumsum2[::-1]
             input_file = input_file[::-1].transpose().drop('index', axis=0)
-            input_file.insert(0,'Name',f)
-            
-            input_file.insert(1,'id','')
-            input_file.insert(2,'Direction','')
-            input_file.insert(3,'Speed limit',speed_limit)
-            input_file.iloc[1,2]=direction[0]
-            input_file.iloc[3,2]=direction[0]
-            input_file.iloc[2,2]=direction[1]
-            input_file.iloc[4,2]=direction[1]
+            input_file.insert(0,'Name', f)
+
+            # my stuff
+            input_file.insert(1, 'Detector_Id', '')
+            input_file.insert(2, 'Road_Id', '')
+            input_file.insert(3, 'StartTime', start_time)
+            input_file.insert(4, 'EndTime', end_time)
+
+            input_file.insert(5, 'Direction', '')
+            input_file.insert(6, 'Speed limit', speed_limit)
+
+            # add direction
+            input_file.iloc[1, 5] = direction[0]
+            input_file.iloc[3, 5] = direction[0]
+            input_file.iloc[2, 5] = direction[1]
+            input_file.iloc[4, 5] = direction[1]
+
+            # input_file.insert(1,'id','')
+            # input_file.insert(2,'Direction','')
+            # input_file.insert(3,'Speed limit', speed_limit)
+            # input_file.iloc[1,2]=direction[0]
+            # input_file.iloc[3,2]=direction[0]
+            # input_file.iloc[2,2]=direction[1]
+            # input_file.iloc[4,2]=direction[1]
             
             df_num = df_num.append(input_file.iloc[1:3])
             df_percent = df_percent.append(input_file.iloc[3:5])
 
-    df_num.to_csv(Processed_dir + "/" + '2015_Speed_Processed_Num.csv')
-    df_percent.to_csv(Processed_dir + "/" + '2015_Speed_Processed_Percent.csv')
+    df_num.to_csv(output_dir + "/" + '2015_Speed_Processed_Num.csv')
+    df_percent.to_csv(output_dir + "/" + '2015_Speed_Processed_Percent.csv')
 
 
 def run_create_aimsum_flow_processed_files():
@@ -1433,6 +1543,26 @@ def run_detectors_id_change():
     flow_processed_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/Flow_processed/"
     change_detector_ids_in_shape_files(detectors_folder, flow_processed_dir, output_folder)
 
+def test_flow_processed_generator_city():
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    raw_2013_city_folder = data_process_folder + "Raw/Demand/Flow_speed/City/2013 ADT Data/"
+    detectors_to_roads_folder = data_process_folder + "Auxiliary files/Network/Infrastructure/Detectors/"
+    flow_speed_folder = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
+    processed_city_folder = flow_speed_folder + "Flow_processed/"
+    processed_pems_folder = flow_speed_folder + "PeMS/"
+    output_folder = processed_city_folder
+    flow_processed_generator_city(processed_city_folder, output_folder, raw_2013_city_folder,
+                                         detectors_to_roads_folder)
+
+def test_speed_data_parser():
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    ADT_dir = dropbox_dir + '/Private Structured data collection/Data processing/Raw/Demand/Flow_speed'
+    Processed_dir = dropbox_dir + '/Private Structured data collection/Data processing/Auxiliary files/Demand/Flow_speed/Flow_processed'
+    City_dir = ADT_dir + "/City"
+    Kimley_Horn_flow_dir = ADT_dir + "/Kimley Horn Data"
+    speed_data_parser(Kimley_Horn_flow_dir, Processed_dir)
+
 # for local testing only
 def raise_exception():
     raise (Exception('stop code here'))
@@ -1443,5 +1573,6 @@ if __name__ == '__main__':
     #get_geo_data(2015)
     # run_create_aimsum_flow_processed_files()
     # run_detectors_id_change()
-    # run_create_aimsum_flow_processed_files()
+    # test_flow_processed_generator_city()
+    # test_speed_data_parser()
     pass

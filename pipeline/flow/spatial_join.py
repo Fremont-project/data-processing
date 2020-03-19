@@ -7,7 +7,7 @@ import numpy as np
 
 # Aimsum sections to detectors
 # Name of columns in all output csv files
-ROAD_ID_NAME = 'eid'
+ROAD_ID_NAME = 'Road_Id'  # aimsum eid for a road, renamed to Road_Id for user clarity
 DETECTOR_ID_NAME = 'Detector_Id'
 DISTANCE_NAME = 'Distance'
 
@@ -161,11 +161,8 @@ def join_detector_to_nearest_road(detectors_df, sections_df, search_dist=1e-4, r
         candidates = sections_df.loc[sections_df.intersects(point['geometry'].buffer(search_dist))]
         # candidates is a list of geo pandas data frame
 
+        # if no roads found, add detector to detectors without roads
         if len(candidates) == 0:
-            # print('\nDetector without a road segment assigned, with search radius of ' + str(search_dist))
-            # print(point)
-            # add detector to result but it won't have a closest road
-            # detectors_to_roads_df = detectors_to_roads_df.append(point)
             detectors_without_roads_df = detectors_without_roads_df.append(point)
             continue
 
@@ -424,10 +421,18 @@ def run_detectors_to_streetline():
 
     streetlines_to_detectors(streetline_folder, detectors_folder, output_folder)
 
+def test_write_detector_shp_to_csv():
+    # dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    # data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    # detectors_folder = data_process_folder + "Raw/Demand/Flow_speed/detectors/"
+    df = load_detector_data('location_2019_detector.shp')
+    df.to_csv('2019_shp_detectors.csv')
+
 def raise_exception():
     raise(Exception('stop here'))
 
 if __name__ == '__main__':
-    run_detectors_to_streetline()
+    # run_detectors_to_streetline()
     # run_detectors_to_aimsum()
+    test_write_detector_shp_to_csv()
     pass
