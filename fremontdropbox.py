@@ -2,7 +2,7 @@ import os,sys
 import json
 from pathlib import Path
 
-def get_dropbox_location(account_type='business'):
+def get_dropbox_location(account_type='personal'):
     """
     Returns a string of the filepath of the Dropbox for this user
 
