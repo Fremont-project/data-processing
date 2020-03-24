@@ -19,14 +19,14 @@ def run_pca(input_folder, desired_variance_explained, streetline_folder):
     :return: plots of analysis, PCs, and projections of observations on PCs
     """
     desired_variance_explained = 96
-    flow_df = pd.read_csv(input_folder + '/flow_processed_section.csv')
-    flow_df = flow_df.set_index(['Name', 'Direction'])
-    flow_df = flow_df.drop(['OBJECTID', 'Day 1 2013',
+    flow_df_raw = pd.read_csv(input_folder + '/flow_processed_section.csv')
+    flow_df_raw = flow_df_raw.set_index(['Name', 'Direction'])
+    flow_df_raw = flow_df_raw.drop(['OBJECTID', 'Day 1 2013',
                             'Day 1 2015', 'Day 1 2017', 'Day 1 2019'], axis=1)
 
     # remove 2015 data also
-    cols_2015 = [col for col in flow_df.columns if '2015' in col]
-    flow_df = flow_df.drop(cols_2015, axis=1)
+    cols_2015 = [col for col in flow_df_raw.columns if '2015' in col]
+    flow_df = flow_df_raw.drop(cols_2015, axis=1)
 
     # check how many roads sections we lost
     print('number of road sections', flow_df.shape[0])
@@ -88,26 +88,100 @@ def run_pca(input_folder, desired_variance_explained, streetline_folder):
         plt.xlabel('# of Features')
         plt.show()
 
-    # create kepler map to visualize pcs weights on their corresponding road sections
+    # # create kepler map to visualize pcs weights on their corresponding road sections
     streetline_df = gpd.GeoDataFrame.from_file(streetline_folder + 'Streetline.shp')
     streetline_df = streetline_df[['OBJECTID', 'Name', 'Direction', 'geometry']]
     streetline_df = streetline_df.set_geometry('geometry')
     streetline_df = streetline_df.to_crs(epsg=4326)
     streetline_df = streetline_df.set_index(['Name', 'Direction'])
 
-    map = kp.KeplerGl(height=600)
-    for i, pc in enumerate(pcs):
+    all_pcs = []
+    for pc in pcs:
+        all_pcs.extend(pc)
+    # normalize (scale) pcs to go from [0, 1]
+    min_val = min(all_pcs)
+    max_val = max(all_pcs)
+    scaled_pcs = (np.array(all_pcs) - min_val) / (max_val - min_val)
+    scaled_pcs = np.reshape(scaled_pcs, (num_pcs, len(scaled_pcs) // num_pcs))
+    scaled_pcs = [list(scaled_pcs[i, :]) for i in range(num_pcs)]
+
+    kepler_map = kp.KeplerGl(height=600)
+    for i, pc in enumerate(scaled_pcs):
         multi_index = pd.MultiIndex.from_tuples(feature_col_names, names=['Name', 'Direction'])
         pc_df = gpd.GeoDataFrame(pc, crs='epsg:4326', index=multi_index, columns=['PC' + str(i + 1)])
         merged_pc_df = pc_df.join(streetline_df)
         merged_pc_df = merged_pc_df.reset_index()
-        map.add_data(data=merged_pc_df, name='PC' + str(i))
+        kepler_map.add_data(data=merged_pc_df, name='PC' + str(i + 1))
 
-    # kepler_map.save_to_html(
-    #     file_name=data_process_folder + "Temporary exports to be copied to processed data/Network/Infrastructure/pca_heatmap.html")
-    # kepler_map
+    dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    kepler_map.save_to_html(
+        file_name=data_process_folder + "Temporary exports to be copied to processed data/Network/Infrastructure/pca_heatmap.html")
 
-    return pcs, projections_on_pcs, map
+    # heat map for flow data per year at the 4pm timestep
+    # reload the data bc 2015 was filtered
+    flow_df = flow_df_raw.transpose()
+    road_names = flow_df.columns
+    num_years = 4
+    num_days = 3
+    day_size = 24 * 4
+    year_size = day_size * num_days
+    data = flow_df.to_numpy()
+    num_roads = data.shape[1]
+
+    # get flow data at 4pm
+    years = ['2013', '2015', '2017', '2019']
+    year_flows_4pm = {}
+    year_remove_idx = {}
+    for r in range(num_roads):
+        road_flow = data[:, r]
+        road_flow = np.reshape(road_flow, (num_years, year_size))
+        for y, year in enumerate(years):
+            if year not in year_flows_4pm:
+                year_flows_4pm[year] = []
+            if year not in year_remove_idx:
+                year_remove_idx[year] = []
+
+            road_flow_days = np.reshape(road_flow[y, :], (num_days, day_size))
+            # index of time 4pm, 4*4
+            flow_4pm = road_flow_days[0, 16]  # 4pm flow at day 1
+
+            # to be use to remove elements that are empty
+            if np.isnan(flow_4pm):
+                year_remove_idx[year].append(r)
+
+            year_flows_4pm[year].append(flow_4pm)
+
+    # scale flow data to range 0, 1
+    all_flow = []
+    for _, vals in year_flows_4pm.items():
+        all_flow.extend(vals)
+    min_val = min(all_flow)
+    max_val = max(all_flow)
+    scaled_flow = (np.array(all_flow) - min_val) / (max_val - min_val)
+    scaled_flow = np.reshape(scaled_flow, (4, num_roads))
+
+    for y, year in enumerate(years):
+        year_flows_4pm[year] = list(scaled_flow[y, :])
+
+    for year, flows_4pm in year_flows_4pm.items():
+        year_road_names = [road for i, road in enumerate(road_names) if i not in year_remove_idx[year]]
+        flows_4pm = [flow for i, flow, in enumerate(flows_4pm) if i not in year_remove_idx[year]]
+        multi_index = pd.MultiIndex.from_tuples(list(year_road_names), names=['Name', 'Direction'])
+        flows_4pm_df = gpd.GeoDataFrame(flows_4pm, crs='epsg:4326', index=multi_index, columns=['flow_4pm'])
+        merged_df = flows_4pm_df.join(streetline_df)
+        merged_df = merged_df.reset_index()
+        kepler_map = kp.KeplerGl(height=600)
+        kepler_map.add_data(data=merged_df, name=year + '_flow_4pm')
+        dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+        data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+        kepler_map.save_to_html(
+            file_name=data_process_folder +
+                      "Temporary exports to be copied to processed data/Network/Infrastructure/%s_flow_4pm_heatmap.html" % year)
+
+
+    return None, None, None
+    # return pcs, projections_on_pcs, map
 
 
 def raise_exception():
