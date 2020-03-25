@@ -1042,8 +1042,21 @@ def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output
         print('Creating copy of shape file with new detector ids: ' + filename)
 
         # direction fix
-        direction_remap = {'NB': 'EB', 'SB': 'WB', 'EB': 'NB', 'WB': 'SB'}
-        direction_remap_2017 = {'NB': 'WB', 'SB': 'EB', 'EB': 'SB', 'WB': 'NB'}
+        map_directions_2019 = {
+            ('S Grimmer Blvd Bet. Osgood Rd & Fremont Blvd.csv', 'NB'): 'WB',
+            ('S Grimmer Blvd Bet. Osgood Rd & Fremont Blvd.csv', 'SB'): 'EB',
+            ('S Grimmer Blvd Bet. Paseo Padre Pkwy & OSgood Rd.csv', 'NB'): 'WB',
+            ('S Grimmer Blvd Bet. Paseo Padre Pkwy & OSgood Rd.csv', 'SB'): 'EB',
+            ('Warre Ave Bet. Warm Springs Blvd & Navajo Rd.csv', 'NB'): 'EB',
+            ('Warre Ave Bet. Warm Springs Blvd & Navajo Rd.csv', 'SB'): 'WB',
+            ('Warrent Ave Bet. Navajo Rd & Curtner Rd.csv', 'NB'): 'EB',
+            ('Warrent Ave Bet. Navajo Rd & Curtner Rd.csv', 'SB'): 'WB',
+            ('Washington Blvd Bet. Driscoll Rd & Paseo Padre Pkwy.csv', 'NB'): 'WB',
+            ('Washington Blvd Bet. Driscoll Rd & Paseo Padre Pkwy.csv', 'SB'): 'EB',
+            ('Washington Blvd Bet. Paseo Padre Pkwy & Mission Blvd.csv', 'NB'): 'WB',
+            ('Washington Blvd Bet. Paseo Padre Pkwy & Mission Blvd.csv', 'SB'): 'EB',
+        }
+
         flow_city_road_names = flow_processed_city_df['Name'].str.lower()
 
         # read and write shape file with fiona
@@ -1068,24 +1081,38 @@ def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output
                         match = matches.iloc[0]
                         row_copy['properties']['Id'] = str(match[DETECTOR_ID_NAME])
                         output.write(row_copy)
-                    else:
-                        # no match, thus we assume directions are wrong
-                        # that is, we map NB <-> EB and SB <-> WB
-                        if year == '2017':
-                            direction = direction_remap_2017[direction]
-                        else:
-                            direction = direction_remap[direction]
-
+                    elif year == '2019':
+                        direction = map_directions_2019[(road_name, direction)]
                         matches = flow_processed_city_df[
                             (flow_city_road_names == road_name.lower()) &
-                             (flow_processed_city_df['Direction'] == direction)
-                        ]
+                            (flow_processed_city_df['Direction'] == direction)
+                            ]
                         if not matches.empty:
                             match = matches.iloc[0]
                             row_copy['properties']['Id'] = str(match[DETECTOR_ID_NAME])
+                            row_copy['properties']['Direction'] = direction
                             output.write(row_copy)
                         else:
-                            print('no match for road name w direction:', road_name, direction)
+                            print('no match:', year, road_name, direction)
+                    else:
+                        print('no match:', year, road_name, direction)
+                        # no match, thus we assume directions are wrong
+                        # that is, we map NB <-> EB and SB <-> WB
+                        # if year == '2017':
+                        #     direction = direction_remap_2017[direction]
+                        # else:
+                        #     direction = direction_remap[direction]
+                        #
+                        # matches = flow_processed_city_df[
+                        #     (flow_city_road_names == road_name.lower()) &
+                        #      (flow_processed_city_df['Direction'] == direction)
+                        # ]
+                        # if not matches.empty:
+                        #     match = matches.iloc[0]
+                        #     row_copy['properties']['Id'] = str(match[DETECTOR_ID_NAME])
+                        #     output.write(row_copy)
+                        # else:
+                        #     print('no match for road name w direction:', road_name, direction)
 
 
                 output.close()
@@ -1533,8 +1560,6 @@ def run_create_aimsum_flow_processed_files():
     flow_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
     create_aimsum_flow_processed_files(flow_dir, flow_dir)
 
-
-
 def run_detectors_id_change():
     dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
     data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
@@ -1572,7 +1597,7 @@ if __name__ == '__main__':
     #process_doc_data(2019)
     #get_geo_data(2015)
     # run_create_aimsum_flow_processed_files()
-    # run_detectors_id_change()
+    run_detectors_id_change()
     # test_flow_processed_generator_city()
     # test_speed_data_parser()
     pass

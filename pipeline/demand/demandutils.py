@@ -74,8 +74,10 @@ def neighborhoods_touching_internal_legs(neighborhoods_path, points_gdf_path, ou
         int_neighborhoods = int_neighborhoods.append(particular_neighborhood, ignore_index=True)
 
     print('Filtered {x} neighborhoods.'.format(x=repr(len(int_neighborhoods['NAME'].unique()))))
+    
+    # CHANGE THE FOLLOWING LINE:
     int_neighborhoods.to_csv(output_path)
-
+    # should be int_neighborhoods.astype({'geometry': str}).to_csv(output_path)
 
 def geovor_in_neighborhoods_random_points(neighborhoods_path, points_gdf_path, output_path):
     import numpy as np
