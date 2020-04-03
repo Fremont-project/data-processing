@@ -854,8 +854,8 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder, de
 
         # create year_info.csv for this year
         year_info_csv = open(output_dir + year + '_info.csv', 'w')
-        legend = ['Name', 'City', 'ID', 'Direction', 'Main road', 'Cross road', 'Start lat', 'Start lng', 'End lat',
-                  'End lng']
+        legend = ['Name', 'City', DETECTOR_ID_NAME, 'Direction', 'Main road', 'Cross road',
+                  'Start lat', 'Start lng', 'End lat','End lng']
         year_info_csv.write(','.join(legend) + '\n')
         for line in csv_lines:
             year_info_csv.write(','.join(line) + '\n')
@@ -1023,6 +1023,50 @@ def create_aimsum_flow_processed_files(flow_dir, output_dir):
             output.write(','.join(str(x) for x in line) + '\n')
         output.close()
 
+    # format the files as needed for aimsum software
+    create_aimsum_output(flow_dir, output_dir)
+
+
+def create_aimsum_output(flow_dir, output_dir):
+    """
+    Creates aimsum output files in desried format. Format has 3 columns: name, count, time
+        where name is 'detector' + detector_id, count is car flow count, and time is the timestep for the flow count.
+
+    :param flow_dir: folder containing flow_processed_year.csv flow data files where year
+        takes values of 2013, 2015, 2017, 2019.
+    :param output_dir: folder to place the created output files
+    """
+    years = ['2013', '2015', '2017', '2019']
+
+    for year in years:
+        flow_df = pd.read_csv(flow_dir + 'flow_processed_%s.csv' % year)
+
+        # unroll all flows, place them into a list
+        unrolled_flows = []
+        start_idx = list(flow_df.columns).index('0:0')
+        for i, row in flow_df.iterrows():
+            name = row['Name'].lower()
+            detector_id = str(int(row[DETECTOR_ID_NAME]))
+            if 'pems' in name:
+                detector_id = 'pem_detector' + detector_id
+            else:
+                detector_id = 'detector' + detector_id
+
+            for j in range(start_idx, flow_df.shape[1]):
+                timestep = flow_df.columns.values[j]
+                if timestep[-2:] == ':0':
+                    timestep += '0'
+                unrolled_flows.append([detector_id, flow_df.iloc[i, j], timestep])
+
+        # write file
+        output_filename = 'aimsum_flow_processed_%s.csv' % year
+        print('Creating ' + output_filename)
+        output = open(output_dir + output_filename, 'w')
+        output.write('name,count,time\n')
+        for flow in unrolled_flows:
+            output.write(','.join(str(x) for x in flow) + '\n')
+        output.close()
+
 
 def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output_dir):
     """
@@ -1041,7 +1085,7 @@ def change_detector_ids_in_shape_files(detectors_dir, flow_processed_dir, output
         output_file = output_dir + filename
         print('Creating copy of shape file with new detector ids: ' + filename)
 
-        # direction fix
+        # correcting directions
         map_directions_2019 = {
             ('S Grimmer Blvd Bet. Osgood Rd & Fremont Blvd.csv', 'NB'): 'WB',
             ('S Grimmer Blvd Bet. Osgood Rd & Fremont Blvd.csv', 'SB'): 'EB',
@@ -1495,8 +1539,8 @@ def speed_data_parser(speed_data_dir, output_dir):
             # read the excel into dataframe
             input_file_all = pd.read_excel(speed_data_dir + "/" + f, sheet_name = '#2').rename(columns={'City of Fremont':'speed'})
             length = len(input_file_all['Unnamed: 34'])
-            direction_descr = input_file_all['Unnamed: 10'][15] # 17K in the excel file
-            speed_limit = input_file_all['Unnamed: 34'][72]#74AI
+            direction_descr = input_file_all['Unnamed: 10'][15]  # 17K in the excel file
+            speed_limit = input_file_all['Unnamed: 34'][72]  # 74AI
             start_time = input_file_all['Unnamed: 34'][length - 6]
             end_time = input_file_all['Unnamed: 34'][length - 5]
 
@@ -1524,7 +1568,7 @@ def speed_data_parser(speed_data_dir, output_dir):
             input_file = input_file[::-1].transpose().drop('index', axis=0)
             input_file.insert(0,'Name', f)
 
-            # my stuff
+            # add info
             input_file.insert(1, 'Detector_Id', '')
             input_file.insert(2, 'Road_Id', '')
             input_file.insert(3, 'StartTime', start_time)
@@ -1539,26 +1583,106 @@ def speed_data_parser(speed_data_dir, output_dir):
             input_file.iloc[2, 5] = direction[1]
             input_file.iloc[4, 5] = direction[1]
 
-            # input_file.insert(1,'id','')
-            # input_file.insert(2,'Direction','')
-            # input_file.insert(3,'Speed limit', speed_limit)
-            # input_file.iloc[1,2]=direction[0]
-            # input_file.iloc[3,2]=direction[0]
-            # input_file.iloc[2,2]=direction[1]
-            # input_file.iloc[4,2]=direction[1]
-            
             df_num = df_num.append(input_file.iloc[1:3])
             df_percent = df_percent.append(input_file.iloc[3:5])
 
-    df_num.to_csv(output_dir + "/" + '2015_Speed_Processed_Num.csv')
-    df_percent.to_csv(output_dir + "/" + '2015_Speed_Processed_Percent.csv')
+    # write them to csv
+    df_num.to_csv(output_dir + '/2015_Speed_Processed_Num.csv', index=False)
+    df_percent.to_csv(output_dir + '/2015_Speed_Processed_Percent.csv', index=False)
 
 
-def run_create_aimsum_flow_processed_files():
+def speed_processed_update(dir_flow_processed):
+    """
+    Updates 2015_Speed_Processed_Num.csv and 2015_Speed_Processed_Percent.csv with detector ids and road ids.
+    The road ids are obtained from the spatial join result. Since similar work was done and compiled
+    in flow_processed_city.csv, use the results in that file to get the detector and road ids.
+
+    :param dir_flow_processed: directory containing the speed files and flow_processed_city.csv file
+    """
+    df_num = pd.read_csv(dir_flow_processed + '2015_Speed_Processed_Num.csv')
+    df_percent = pd.read_csv(dir_flow_processed + '2015_Speed_Processed_Percent.csv')
+    flow_df = pd.read_csv(dir_flow_processed + 'flow_processed_city.csv')
+
+    # map speed road name to flow road name to obtain ids
+    speed_to_flow_road = {
+        "44 - Durham Rd - I-680 to Mission Blvd.xls": "Durham Rd betw. I-680 and Mission.csv",
+        "61 - South Grimmer Blvd - Osgood Rd to Fremont Blvd.xls": "Grimmer Blvd (South) betw. Osgood and Fremont.csv",
+        "60 - Grimmer Blvd - Paseo Padre Pkwy to Osgood Rd.xls": "Grimmer Blvd (South) betw. Paseo Padre and Osgood.csv",
+        "84 - Mission Blvd - Durham Rd to Curtner Rd.xls": "Mission Blvd betw. Durham and Curtner.csv",
+        "81 - Mission Blvd - Mission Rd to St Joseph Terrace.xls": "Mission Blvd betw. Mission Rd and St. Josephs.csv",
+        "83 - Mission Blvd - Pine St to Durham Rd.xls": "Mission Blvd betw. Pine and Durham.csv",
+        "82 - Mission Blvd - St Joseph Terr to Pine St.xls": "Mission Blvd betw. St. Josephs and Pine.csv",
+        "106 - Paseo Padre Pkwy - Driscoll Rd to Washington Blvd - Resurvey.xls": "Paseo Padre Pkwy betw. Driscoll and Quema.csv",
+        "108 - Paseo Padre Pkwy - Durham Rd to Onondaga Wy.xls": "Paseo Padre Pkwy betw. Durham and Onondaga.csv",
+        "110 - Paseo Padre Pkwy - Mission Blvd to Curtner Rd.xls": "Paseo Padre Pkwy betw. Mission and Curtner.csv",
+        "109 - Paseo Padre Pkwy - Onondaga Wy to Mission Blvd.xls": "Paseo Padre Pkwy betw. Onondaga and Mission.csv",
+        "107 - Paseo Padre Pkwy - Washington Blvd to Durham Rd - Resurvey.xls": "Paseo Padre Pkwy betw. Quema and Durham.csv",
+        "135 - Warren Avenue - Curtner Road to Warm Springs Boulevard.xls": "Warren Ave betw. Curtner and Warm Springs.csv",
+        "139 - Washington Boulevard - Driscoll Road to Paseo Padre Pkwy.xls": "Washington Blvd betw. Driscoll and Paseo Padre.csv",
+        "140 - Washington Boulevard - Paseo Padre Pkwy to Mission Blvd.xls": "Washington Blvd betw. Paseo Padre and Mission.csv"
+    }
+
+    direction_fix = {
+        ("135 - Warren Avenue - Curtner Road to Warm Springs Boulevard.xls", "NB"): "EB",
+        ("135 - Warren Avenue - Curtner Road to Warm Springs Boulevard.xls", "SB"): "WB",
+        ("109 - Paseo Padre Pkwy - Onondaga Wy to Mission Blvd.xls", "EB"): "NB",
+        ("109 - Paseo Padre Pkwy - Onondaga Wy to Mission Blvd.xls", "WB"): "SB",
+        ("108 - Paseo Padre Pkwy - Durham Rd to Onondaga Wy.xls", "EB"): "NB",
+        ("108 - Paseo Padre Pkwy - Durham Rd to Onondaga Wy.xls", "WB"): "SB"
+    }
+
+    # iterate over rows in num_df and add detector and road id from flow df
+    for i, row in df_num.iterrows():
+        direction = row['Direction']
+        road_name = row['Name']
+
+        # correcting directions
+        if (road_name, direction) in direction_fix:
+            direction = direction_fix[(road_name, direction)]
+
+        flow_road = speed_to_flow_road[road_name]
+        matches_df = flow_df[(flow_df['Name'] == flow_road) & (flow_df['Direction'] == direction)]
+        if not matches_df.empty:
+            match = matches_df.iloc[0]
+            df_num.at[i, DETECTOR_ID_NAME] = match[DETECTOR_ID_NAME]
+            df_num.at[i, ROAD_ID_NAME] = match[ROAD_ID_NAME]
+        else:
+            raise(Exception('No detector and road id match for %s %s' % (flow_road, direction)))
+
+    # do the same for rows in percent_df
+    for i, row in df_percent.iterrows():
+        direction = row['Direction']
+        road_name = row['Name']
+
+        # correct directions
+        if (road_name, direction) in direction_fix:
+            direction = direction_fix[(road_name, direction)]
+
+        flow_road = speed_to_flow_road[road_name]
+        matches_df = flow_df[(flow_df['Name'] == flow_road) & (flow_df['Direction'] == direction)]
+        if not matches_df.empty:
+            match = matches_df.iloc[0]
+            df_percent.at[i, DETECTOR_ID_NAME] = match[DETECTOR_ID_NAME]
+            df_percent.at[i, ROAD_ID_NAME] = match[ROAD_ID_NAME]
+        else:
+            raise (Exception('No detector and road id match for %s %s' % (flow_road, direction)))
+
+    # write the update dfs to csv
+    df_num.to_csv(dir_flow_processed + '/2015_Speed_Processed_Num.csv', index=False)
+    df_percent.to_csv(dir_flow_processed + '/2015_Speed_Processed_Percent.csv', index=False)
+
+
+def test_create_aimsum_flow_processed_files():
     dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
     data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
     flow_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
     create_aimsum_flow_processed_files(flow_dir, flow_dir)
+
+def test_create_aimsum_output():
+    dropbox_dir = '/Users/edson/Dropbox'
+    data_process_folder = dropbox_dir + "/Private Structured data collection/Data processing/"
+    flow_dir = data_process_folder + "Auxiliary files/Demand/Flow_speed/"
+    create_aimsum_output(flow_dir, flow_dir)
 
 def run_detectors_id_change():
     dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
@@ -1588,6 +1712,12 @@ def test_speed_data_parser():
     Kimley_Horn_flow_dir = ADT_dir + "/Kimley Horn Data"
     speed_data_parser(Kimley_Horn_flow_dir, Processed_dir)
 
+def test_speed_data_update():
+    # dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
+    dropbox_dir = '/Users/edson/Dropbox'
+    Processed_dir = dropbox_dir + '/Private Structured data collection/Data processing/Auxiliary files/Demand/Flow_speed/Flow_processed/'
+    speed_processed_update(Processed_dir)
+
 # for local testing only
 def raise_exception():
     raise (Exception('stop code here'))
@@ -1596,8 +1726,12 @@ if __name__ == '__main__':
     #process_adt_data(2015)
     #process_doc_data(2019)
     #get_geo_data(2015)
-    # run_create_aimsum_flow_processed_files()
-    run_detectors_id_change()
+    # test_create_aimsum_flow_processed_files()
+    # run_detectors_id_change()
     # test_flow_processed_generator_city()
     # test_speed_data_parser()
+
+    test_create_aimsum_output()
+
+    # test_speed_data_update()
     pass

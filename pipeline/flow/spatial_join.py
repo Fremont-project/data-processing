@@ -121,8 +121,12 @@ def detectors_to_road_segments(year, dir_section, dir_detectors, dir_output):
         detectors_to_roads_df = detectors_to_roads_df[[DETECTOR_ID_NAME, ROAD_ID_NAME, DISTANCE_NAME]]
     else:
         detectors_to_roads_df = detectors_to_roads_df[[DETECTOR_ID_NAME, ROAD_ID_NAME]]
-    # writ to csv
+
+    # write to csv
+    detectors_to_roads_df = detectors_to_roads_df.sort_values(by=[DETECTOR_ID_NAME])
     detectors_to_roads_df.to_csv(dir_output + 'detectors_to_road_segments_%s.csv' % str(year), index=False)
+
+    # write detectors wout road assignment to csv
     if not detectors_wout_roads_df.empty:
         print('Detectors w/out road assignment found, with search radius of ' + str(search_dist))
         print('Writing detectors_without_road_segments_%s.csv' % str(year))
@@ -244,13 +248,13 @@ def find_duplicates(year, dir_sections, dir_detectors, dir_output, show_plot=Fal
         print('No duplicates found')
 
 
-def find_duplicates_helper(detectors_to_roads_df, sections_df, detectors_df):
+def find_duplicates_helper(detectors_to_roads_df, sections_df, detectors_df, verbose=False):
     # group detectors by road ids
     road_id_to_detectors = {}
     for i, detector in detectors_to_roads_df.iterrows():
         # row is pandas series data type
         # section_id = road id and OBJECTID = detector id
-        road_id = detector[ROAD_ID_NAME] # float
+        road_id = detector[ROAD_ID_NAME]  # float
         if road_id not in road_id_to_detectors:
             road_id_to_detectors[road_id] = []
         road_id_to_detectors[road_id].append(detector)
@@ -261,14 +265,16 @@ def find_duplicates_helper(detectors_to_roads_df, sections_df, detectors_df):
     for road_id, detectors in road_id_to_detectors.items():
         if len(detectors) > 1:
             # need geometry of points and geometry of line segment
-            print("\nfound multiple detectors for road id %s" % int(road_id))
+            if verbose:
+                print("\n found multiple detectors for road id %s" % int(road_id))
 
             # add the detectors
             for i, detector in enumerate(detectors):
-                print("\ndetector %d info:" % i)
-                print(detector)
+                if verbose:
+                    print("\n detector %d info:" % i)
+                    print(detector)
                 detector_info = detectors_df.loc[detectors_df[DETECTOR_ID_NAME] == int(detector[DETECTOR_ID_NAME])]
-                detector['geometry'] = detector_info.iloc[0]['geometry'] # there should only be one match
+                detector['geometry'] = detector_info.iloc[0]['geometry']  # there should only be one match
                 ret_df = ret_df.append(detector)
 
 

@@ -62,12 +62,6 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
     legend += flow_legend
     output.write(','.join(legend) + '\n')
 
-    # Fixing data: 3 road detectors were assigned to 1 streetline. Each detector represents 1 day of flow.
-    # We usually average flow data when multiple detectors are assigned to one streeline. In this case,
-    # we unroll the 3 detectors data into 3 days worth of flow.
-    # The streetlines we do this for are: Washington Mission PPP EB, Washington PPP Driscoll EB, Washington Mission.
-    streetlines_to_unroll = ['Washington Mission PPP EB', 'Washington PPP Driscoll EB', 'Washington Mission']
-
     # Code is much cleaner if we processed city flow and pems flow separately, this is due to
     # when querying for flow data using a city detector id it returns one year worth of flow
     # but when querying for flow data using pems detector id it returns 4 years worth of flow at once
