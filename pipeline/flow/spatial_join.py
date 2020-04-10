@@ -440,5 +440,5 @@ def raise_exception():
 if __name__ == '__main__':
     # run_detectors_to_streetline()
     # run_detectors_to_aimsum()
-    test_write_detector_shp_to_csv()
+    # test_write_detector_shp_to_csv()
     pass
