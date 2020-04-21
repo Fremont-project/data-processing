@@ -16,6 +16,8 @@ from shutil import copyfile, copytree
 from shapely.ops import nearest_points, unary_union
 from shapely.geometry import Point, LineString
 
+from pathlib import Path
+
 
 # importing all the Kepler.gl configurations
 import ast
@@ -627,10 +629,8 @@ def get_sfcta_dataframe(int_int_path, int_ext_path, ext_int_path):
     int_int_trips = pd.read_csv(int_int_path)
     int_ext_trips = pd.read_csv(int_ext_path)
     ext_int_trips = pd.read_csv(ext_int_path)
-
     internal_trips = pd.DataFrame.merge(int_int_trips, int_ext_trips, 'outer')
     internal_trips = pd.DataFrame.merge(internal_trips, ext_int_trips, 'outer')
-    
     return internal_trips
 
 def join_taz_on_sfcta_data(internal_trips, tazs):
@@ -654,9 +654,14 @@ def join_taz_on_sfcta_data(internal_trips, tazs):
     
     return internal_trips_end
 
-def cluster_demand_15min(df):
+def shift_time(demand_df, column, time_to_shift):
+    demand_df[column] = demand_df[column].apply(lambda x: pd.Timestamp(x))
+    demand_df[column] += pd.to_timedelta(time_to_shift, unit='h')
+    demand_df[column] = demand_df[column].apply(lambda x: x.time())
+
+def cluster_demand_15min(demand_df):
     """
-    Exports an origin-destination matrix into CSV.
+    Return an origin-destination matrix as pandas dataframe.
     
     -----------------------------------------------
     | CentroidID_O | CentroidID_D | dt_15 | count |
@@ -666,26 +671,10 @@ def cluster_demand_15min(df):
     ----------
     df : DataFrame
         DataFrame representing OD matrix
-    output_path : string
-        Output path
     """
-    demand_df = df
-    demand_df['dt'] = pd.to_datetime(demand_df['start_time'])
-    dt_15=[]
-    for dt in demand_df['dt']:
-        # Replace each dt value (start_time) with the time in current 15 minute chunk of the hour
-        # (e.g. 22:39 -> 22:30 as it's past 22:30 but before 22:45)
-        dt_aux = str(dt.replace(minute=int(dt.minute/15)*15,second = 0).replace(tzinfo=utc)).split(' ')[1].split('+')[0][:-3]
-        dt_15.append(dt_aux)
+    demand_df['start_time'] = demand_df['start_time'].apply(lambda x: str(x.replace(minute=int(x.minute/15)*15,second = 0)))
+    return demand_df.groupby(['CentroidID_D', 'CentroidID_O', 'start_time']).size().reset_index(name='counts')
 
-    demand_df['dt_15'] = dt_15
-    ## It seems that the groupby is droping NaN trips --> here we need to check that their is no NaN before the demand
-    grouped_od_demand_15min = demand_df.groupby(['CentroidID_D', 'CentroidID_O', 'dt_15']).size().reset_index(name='counts')
-    
-    return grouped_od_demand_15min
-
-from pathlib import Path
-import numpy as np
 
 def export_all_demand_between_centroids(concatenated_matrices, output):
     """
@@ -708,9 +697,15 @@ def process_SFCTA_data(int_int_path, int_ext_path, ext_int_path, output_taz, out
     This method performs all processing steps on SFCTA data. Loads trips (given by int_int_path, int_ext_path, 
     ext_int_path) into a dataframe, merges appropriate TAZs, and exports grouped demand in an Aimsun-friednly format at 
     output_int_demand_path.
+    
+    @param int_int_path:          To do
     """
     print("Loading SFCTA trips...")
     internal_trips = get_sfcta_dataframe(int_int_path, int_ext_path, ext_int_path)
+    print(str(internal_trips.leg_id.count()) + " trips")
+    
+    print("Shifting time...")
+    shift_time(internal_trips, 'start_time', -8)
 
     print("Loading TAZs...")
     # Merging internal and external TAZs
@@ -719,9 +714,11 @@ def process_SFCTA_data(int_int_path, int_ext_path, ext_int_path, output_taz, out
 
     print("Joining SFCTA trips on TAZs...")
     internal_trips_end = join_taz_on_sfcta_data(internal_trips, tazs)
+    print(str(internal_trips_end.leg_id.count()) + " trips")
 
     print("Grouping demand per 15 minutes time step...")
     grouped_od_demand_15min = cluster_demand_15min(internal_trips_end)
+    print(str(grouped_od_demand_15min.counts.sum()) + " trips")
 
     print("Exporting SFCTA demand with format for Aimsun...")
     export_all_demand_between_centroids(grouped_od_demand_15min, output_int_demand_path)
