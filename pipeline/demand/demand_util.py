@@ -659,7 +659,7 @@ def shift_time(demand_df, column, time_to_shift):
     demand_df[column] += pd.to_timedelta(time_to_shift, unit='h')
     demand_df[column] = demand_df[column].apply(lambda x: x.time())
 
-def cluster_demand_15min(demand_df):
+def cluster_demand_15min(df):
     """
     Return an origin-destination matrix as pandas dataframe.
     
@@ -672,8 +672,11 @@ def cluster_demand_15min(demand_df):
     df : DataFrame
         DataFrame representing OD matrix
     """
+    demand_df = df.copy()
     demand_df['start_time'] = demand_df['start_time'].apply(lambda x: str(x.replace(minute=int(x.minute/15)*15,second = 0)))
-    return demand_df.groupby(['CentroidID_D', 'CentroidID_O', 'start_time']).size().reset_index(name='counts')
+    demand_df = demand_df.groupby(['CentroidID_D', 'CentroidID_O', 'start_time']).size().reset_index(name='counts')
+    demand_df.rename(columns={"start_time": "dt_15"},inplace=True)
+    return demand_df
 
 
 def export_all_demand_between_centroids(concatenated_matrices, output):
@@ -719,7 +722,7 @@ def process_SFCTA_data(int_int_path, int_ext_path, ext_int_path, output_taz, out
     print("Grouping demand per 15 minutes time step...")
     grouped_od_demand_15min = cluster_demand_15min(internal_trips_end)
     print(str(grouped_od_demand_15min.counts.sum()) + " trips")
-
+    
     print("Exporting SFCTA demand with format for Aimsun...")
     export_all_demand_between_centroids(grouped_od_demand_15min, output_int_demand_path)
     print("Processing of SFCTA data finished. The output files are located in " + output_int_demand_path)
