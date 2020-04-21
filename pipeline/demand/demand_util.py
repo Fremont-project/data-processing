@@ -679,6 +679,7 @@ def cluster_demand_15min(df):
         dt_15.append(dt_aux)
 
     demand_df['dt_15'] = dt_15
+    ## It seems that the groupby is droping NaN trips --> here we need to check that their is no NaN before the demand
     grouped_od_demand_15min = demand_df.groupby(['CentroidID_D', 'CentroidID_O', 'dt_15']).size().reset_index(name='counts')
     
     return grouped_od_demand_15min
