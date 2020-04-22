@@ -14,9 +14,9 @@ Flow-Speed Preprocessing Pipeline
 - PCA on flow data
 
 <p align="center">
-  <img src="https://github.com/Fremont-project/data-processing/tree/master/pipeline/flow/pca_years.png" width="75%" height="75%">
+  <img src="https://github.com/Fremont-project/data-processing/blob/master/pipeline/flow/pca_years.png" width="75%" height="75%">
 
-  <img src="https://github.com/Fremont-project/data-processing/tree/master/pipeline/flow/output_files.png" width="75%" height="75%">
+  <img src="https://github.com/Fremont-project/data-processing/blob/master/pipeline/flow/output_files.png" width="75%" height="75%">
 </p>
 
 ## Inputs of the pipeline
