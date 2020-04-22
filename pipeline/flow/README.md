@@ -13,23 +13,23 @@ Flow-Speed Preprocessing Pipeline
 - One file with the flow data corresponding to road sections for 2013, 2015, 2017 and 2019
 - PCA on flow data
 
-### PCA Analysis
-- Data matrix has rows as timesteps, columns as road sections and values are vehicle counts.
-- PC3 and PC4 explained the variance in traffic count over years the most. 
-- The scatter plot below plots traffic counts projected onto PC4 and PC3 and the coloring are over years. This shows how PC4 and PC3 explain the variance in traffic data over different years.
-
-<p align="center">
-  <img src="https://github.com/Fremont-project/data-processing/blob/master/pipeline/flow/pca_years.png" width="75%" height="75%">
-</p>
-
 ### Example of Output Files
-- Here are 3 type of output files produced by the pipeline. 
+Here are 3 type of output files produced by the pipeline. 
 - Flow_processed_city.csv contains the city traffic flow data over all years (=2013, 2015, 2017, 2019). Each row is a road section and columns are traffic count data per 15 minute timesteps. 
 - Flow_processed_pems.csv contains PeMS traffic flow data over all years as well. The general format is the same of Flow_processed_pems.csv.
 - Year_info.csv contains geolocation data of the city detectors per year. That is, there is one year_info.csv file per year for 2013, 2015, 2017 and 2019. 
 
 <p align="center">
   <img src="https://github.com/Fremont-project/data-processing/blob/master/pipeline/flow/output_files.png" width="75%" height="75%">
+</p>
+
+### PCA Analysis
+- Data matrix has rows as timesteps, columns as road sections and values are vehicle counts.
+- PC3 and PC4 explained the most variance in traffic count over years.
+- The scatter plot below plots traffic counts projected onto PC4 and PC3 with coloring over years. This shows how PC4 and PC3 can be used to cluster the traffic data with respect to year.
+
+<p align="center">
+  <img src="https://github.com/Fremont-project/data-processing/blob/master/pipeline/flow/pca_years.png" width="75%" height="75%">
 </p>
 
 ## Inputs of the pipeline
