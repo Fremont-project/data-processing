@@ -13,6 +13,11 @@ Flow-Speed Preprocessing Pipeline
 - One file with the flow data corresponding to road sections for 2013, 2015, 2017 and 2019
 - PCA on flow data
 
+<p align="center">
+  <img src="https://github.com/Fremont-project/data-processing/tree/master/pipeline/flow/pca_years.png" width="75%" height="75%">
+
+  <img src="https://github.com/Fremont-project/data-processing/tree/master/pipeline/flow/output_files.png" width="75%" height="75%">
+</p>
 
 ## Inputs of the pipeline
 
@@ -34,6 +39,7 @@ Flow-Speed Preprocessing Pipeline
     - PeMS data
 - geographic information of road detectors for 2013, 2015, 2017, 2019
 - Processed speed data for Kimley Horn
-- Flow_processed_tmp
+
+
 
 
