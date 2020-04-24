@@ -29,10 +29,10 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
     for day in range(num_days):
         for hour in range(num_hours):
             for timestep in range(0, 60, 15):
-                flow_legend.append('Day %s - %s:%s' % (str(day + 1), str(hour), str(timestep)))
+                flow_legend.append('Day %s - %s' % (str(day + 1), format_timestep(hour, timestep)))
 
     # get start index of flow
-    flow_start_index = list(flow_processed_pems_df.columns).index('Day 1 - 0:0')
+    flow_start_index = list(flow_processed_pems_df.columns).index('Day 1 - %s' % format_timestep(0, 0))
     # create rows for new pems
     pems_flow_rows = []
     for _, row in flow_processed_pems_df.iterrows():
@@ -56,7 +56,7 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
         for day in range(num_days):
             for hour in range(num_hours):
                 for timestep in range(0, 60, 15):
-                    flow_legend.append('Day %s - %s - %s:%s' % (str(day + 1), str(year), str(hour), str(timestep)))
+                    flow_legend.append('Day %s - %s - %s' % (str(day + 1), str(year), format_timestep(hour, timestep)))
     legend = ['OBJECTID', 'Name', 'Direction', ]
     legend += ['Day 1 ' + year for year in years]
     legend += flow_legend
@@ -146,7 +146,7 @@ def create_flow_processed_section(line_to_detectors_dir, flow_speed_dir, output_
             else:
                 # get day1 and flow data for this year
                 day1 = one_year_detector_data.iloc[0]['Day 1']
-                flow_start_index = list(one_year_detector_data.columns).index('Day 1 - 0:0')
+                flow_start_index = list(one_year_detector_data.columns).index('Day 1 - %s' % format_timestep(0, 0))
                 one_year_detector_data = one_year_detector_data.to_numpy()[0, flow_start_index:]
                 one_year_detector_data = np.concatenate((day1, one_year_detector_data), axis=None)
                 all_years_data_lst.append(one_year_detector_data)
@@ -178,7 +178,7 @@ def parse_detector_year_data(detector_id, flow_df, year, expected_year_flow_data
         # get day 1
         day1 = detector_year_data['Day 1']
         # get detector year data (flow data)
-        data_flow_start_idx = [i for i, col in enumerate(detector_year_data.columns) if col == 'Day 1 - 0:0']
+        data_flow_start_idx = [i for i, col in enumerate(detector_year_data.columns) if col == ('Day 1 - %s' % format_timestep(0, 0))]
         if not data_flow_start_idx:
             raise(Exception('Cant find data flow start index for detector id %s' % detector_id))
         data_flow_start_idx = data_flow_start_idx[0]
@@ -202,6 +202,10 @@ def parse_detector_year_data(detector_id, flow_df, year, expected_year_flow_data
 
     return detector_year_data
 
+def format_timestep(hr, min):
+    hr = '0' + str(hr) if hr < 10 else str(hr)
+    min = '0' + str(min) if min < 10 else str(min)
+    return hr + ':' + min
 
 def raise_exception():
     # easy method to stop code at some desired location

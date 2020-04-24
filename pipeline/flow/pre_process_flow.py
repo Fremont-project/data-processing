@@ -740,7 +740,7 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder, de
     for day in range(days):
         for hr in range(hours):
             for min in range(0, 60, timestep):
-                legend.append('Day %s - %s:%s' % (day + 1, hr, min))
+                legend.append('Day %s - %s' % (day + 1, format_timestep(hr, min)))
     csv_lines.append(legend)
 
     # read flow data from processed folders 'year processed'
@@ -794,7 +794,7 @@ def flow_processed_generator_city(processed_dir, output_dir, raw_2013_folder, de
                 # name, direction, detector id, road id, year, day 1
                 csv_line = [file_name, direction, detector_id, road_id, year, day_1]
 
-                # flow data from day 1 - 0:0 to day 3 - 23:45
+                # flow data from day 1 - 00:00 to day 3 - 23:45
                 if direction in flow_data_df.columns:
                     csv_line.extend(flow_data_df[direction].values)
                 else:
@@ -887,7 +887,7 @@ def flow_processed_generator_pems(processed_dir, output_dir, detectors_to_roads_
     for day in range(days):
         for hr in range(hours):
             for min in range(0, 60, timestep):
-                legend.append('Day %s - %s:%s' % (day + 1, hr, min))
+                legend.append('Day %s - %s' % (day + 1, format_timestep(hr, min)))
     csv_lines.append(legend)
 
     # read flow data from processed folders 'year processed'
@@ -950,8 +950,9 @@ def create_aimsum_flow_processed_files(flow_dir, output_dir):
     flow_processed_pems_df = pd.read_csv(pems_dir + 'flow_processed_pems.csv')
 
     # find starting column idx of flow data in the files
-    start_idx_city_flow = list(flow_processed_city_df.columns).index('Day 1 - 0:0')
-    start_idx_pems_flow = list(flow_processed_pems_df.columns).index('Day 1 - 0:0')
+    time_zero = format_timestep(0, 0)
+    start_idx_city_flow = list(flow_processed_city_df.columns).index('Day 1 - ' + time_zero)
+    start_idx_pems_flow = list(flow_processed_pems_df.columns).index('Day 1 - ' + time_zero)
 
     # parse flow data into dic per year
     year_to_flow_data_dic = {}
@@ -1012,7 +1013,7 @@ def create_aimsum_flow_processed_files(flow_dir, output_dir):
         legend = ['Name', 'Direction', DETECTOR_ID_NAME, ROAD_ID_NAME,'Year']
         for hr in range(24):
             for minute in range(0, 60, 15):
-                legend.append('%s:%s' % (hr, minute))
+                legend.append(format_timestep(hr, minute))
 
         # write to file
         output.write(','.join(legend) + '\n')
@@ -1043,7 +1044,7 @@ def create_aimsum_output(flow_dir, output_dir):
 
         # unroll all flows, place them into a list
         unrolled_flows = []
-        start_idx = list(flow_df.columns).index('0:0')
+        start_idx = list(flow_df.columns).index(format_timestep(0, 0))
         for i, row in flow_df.iterrows():
             name = row['Name'].lower()
             detector_id = str(int(row[DETECTOR_ID_NAME]))
@@ -1054,8 +1055,8 @@ def create_aimsum_output(flow_dir, output_dir):
 
             for j in range(start_idx, flow_df.shape[1]):
                 timestep = flow_df.columns.values[j]
-                if timestep[-2:] == ':0':
-                    timestep += '0'
+                # if timestep[-2:] == ':0':
+                #     timestep += '0'
                 unrolled_flows.append([detector_id, flow_df.iloc[i, j], timestep])
 
         # write file
@@ -1399,6 +1400,10 @@ def speed_processed_update(dir_flow_processed):
     df_num.to_csv(dir_flow_processed + '/2015_Speed_Processed_Num.csv', index=False)
     df_percent.to_csv(dir_flow_processed + '/2015_Speed_Processed_Percent.csv', index=False)
 
+def format_timestep(hr, min):
+    hr = '0' + str(hr) if hr < 10 else str(hr)
+    min = '0' + str(min) if min < 10 else str(min)
+    return hr + ':' + min
 
 def test_create_aimsum_flow_processed_files():
     dropbox_dir = '/Users/edson/Fremont Dropbox/Theophile Cabannes'
