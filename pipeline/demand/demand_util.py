@@ -724,8 +724,9 @@ def process_SFCTA_data(int_int_path, int_ext_path, ext_int_path, output_taz, out
     internal_trips = get_sfcta_dataframe(int_int_path, int_ext_path, ext_int_path)
     print(str(internal_trips.leg_id.count()) + " trips")
     
+    ## Depending on the data, the time might need to be shifted
     print("Shifting time...")
-    shift_time(internal_trips, 'start_time', -8)
+    shift_time(internal_trips, 'start_time', 0)
 
     print("Loading TAZs...")
     # Merging internal and external TAZs
