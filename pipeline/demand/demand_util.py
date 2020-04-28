@@ -83,7 +83,7 @@ def get_nodes_with_neighborhood(nodes_path, neighborhoods_shp, kepler_config=Non
     nodes = gpd.GeoDataFrame(
         nodes_df, crs='epsg:4326', geometry=gpd.points_from_xy(nodes_df.start_node_lng, nodes_df.start_node_lat))
     gdf_bis = gpd.GeoDataFrame(
-        nodes_df, crs='epsg:4326', geometry=gpd.points_from_xy(nodes_df.end_node_lng, nodes_df.end_node_lat))
+        nodes_df.copy(), crs='epsg:4326', geometry=gpd.points_from_xy(nodes_df.end_node_lng, nodes_df.end_node_lat))
 
     # Adding the end points and the start points together, only keeping some data
     nodes = nodes.append(gdf_bis)
@@ -92,6 +92,9 @@ def get_nodes_with_neighborhood(nodes_path, neighborhoods_shp, kepler_config=Non
     # Joining the neighborhooed on the SFCTA points
     joined_nodes = gpd.sjoin(nodes, neighborhoods_shp, how='left', op='within')
     
+    ## Points that are outside Fremont are associated with neighborhood 22
+    joined_nodes['OBJECTID'].fillna(22, inplace=True)
+
     # Transforming the geopandas shapefile to numpy array
     X = np.zeros((joined_nodes.shape[0], 3))
     X[:,0],X[:,1],X[:,2] = joined_nodes.geometry.x, joined_nodes.geometry.y, joined_nodes.OBJECTID * 100
@@ -166,6 +169,10 @@ def get_taz_from_predict(data, kmeans, neighborhoods_shp, h=.0002, kepler_config
     # Getting the labels of every point in the mesh by joining the neighborhood on the points and using the trained k-mean cluster model
     data_mesh = gpd.GeoDataFrame(crs = 'epsg:4326', geometry=gpd.points_from_xy(xx_col, yy_col))
     data_mesh = gpd.sjoin(data_mesh, neighborhoods_shp, how='left', op='within')
+    
+    ## Mesh point that ae outside Fremont are associated with neighborhood 22
+    data_mesh['OBJECTID'].fillna(22, inplace=True)
+    
     data_mesh = data_mesh[['geometry', 'OBJECTID']]
 
     point_test = np.zeros((i*j,3))
@@ -334,6 +341,16 @@ def get_internal_centroid_connection(section_path, output_taz, debug=False):
     # loading the data
     sections_gdf = to_gdf(section_path)
     int_taz_shapefile, _ = loading_taz(output_taz)
+    
+    #########################################################################
+    #########################################################################
+    ################# LINE TO CHANGE ONCE EXTERNAL TAZ DONE #################
+    ## Quick fix while working on the external TAZs!!!
+    int_taz_shapefile = int_taz_shapefile[int_taz_shapefile.CentroidID != 'int_68']
+    int_taz_shapefile = int_taz_shapefile.reset_index()
+    #########################################################################
+    #########################################################################
+    #########################################################################
     
     # Find all road sections in road network with either no fnode or no tnode
     no_fnode = sections_gdf[sections_gdf['fnode'].map(math.isnan) == True]
