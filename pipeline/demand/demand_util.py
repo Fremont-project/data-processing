@@ -347,7 +347,7 @@ def get_internal_centroid_connection(section_path, output_taz, debug=False):
     ################# LINE TO CHANGE ONCE EXTERNAL TAZ DONE #################
     ## Quick fix while working on the external TAZs!!!
     int_taz_shapefile = int_taz_shapefile[int_taz_shapefile.CentroidID != 'int_68']
-    int_taz_shapefile = int_taz_shapefile.reset_index()
+    int_taz_shapefile = int_taz_shapefile.reset_index(drop=True)
     #########################################################################
     #########################################################################
     #########################################################################
@@ -581,7 +581,7 @@ def write_centroid_connections(output_path, section_path, output_taz):
     """
     # loading the data
     sections_gdf = to_gdf(section_path)
-    int_taz_shapefile, _ = loading_taz(output_taz)
+#     int_taz_shapefile, _ = loading_taz(output_taz)
     ext_cen_shapefile = to_gdf(output_taz + "/External_centroids.shp")
     
     #get internal centroid connections
@@ -756,8 +756,8 @@ def get_external_demand_streetlight(streetlight_path, flow_path, output_ext_dema
     flow_pems = pd.read_csv(flow_path)
 
     # extract flow for the pems detector and compute the distribution
-    flow_nb = flow_pems[flow_pems['Detector_Id']==pems_nb_id].loc[:, '14:0': '20:0']
-    flow_sb = flow_pems[flow_pems['Detector_Id']==pems_sb_id].loc[:, '14:0': '20:0']
+    flow_nb = flow_pems[flow_pems['Detector_Id']==pems_nb_id].loc[:, '14:00': '20:00']
+    flow_sb = flow_pems[flow_pems['Detector_Id']==pems_sb_id].loc[:, '14:00': '20:00']
     flow_nb_percent = flow_nb / int(flow_nb.sum(axis=1))
     flow_sb_percent = flow_sb / int(flow_sb.sum(axis=1))
 
