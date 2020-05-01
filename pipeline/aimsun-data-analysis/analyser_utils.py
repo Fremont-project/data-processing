@@ -189,7 +189,6 @@ class AimsunAnalyzer:
         self.vehTrajectory["travelTime"] = self.vehTrajectory["exitTime"]-self.vehTrajectory["entranceTime"]
         self.vehSectTrajectory = create_df_from_sql_table(self.conn, "MIVEHSECTTRAJECTORY")
         self.vehSectTrajectory["interval"] = self.vehSectTrajectory.apply(lambda row : self.convert_time_second_to_int(row["exitTime"]) , axis=1)
-
         print("=====Simulation Data Loaded.=====")
         
         self.ground_truth_file = ground_truth_file
@@ -216,6 +215,24 @@ class AimsunAnalyzer:
         dt = datetime.datetime.strptime(time_str, '%H:%M')
         time_second = dt.hour*3600 + dt.minute*60
         return self.convert_time_second_to_int(time_second)
+    
+    def CID2EID(self, cid, df):
+        """
+        Given Centroid ID of a centroid, returns the external ID of this centroid.
+        @param cid:            The centroid ID of a centroid, i.e. "int_0" or "ext_13".
+        @param df:             The dataframe with correspondence between CID and EID.
+        @return:               The external ID of the centroid, i.e. input "int_0" -> output 66801.
+        """
+        return df[df['Name']==cid]['ID'].values[0]
+
+    def EID2CID(self, eid, df):
+        """
+        Given external ID of a centroid, returns the Centroid ID of this centroid.
+        @param eid:             The external ID of a centroid, i.e. 66801.
+        @param df:              The dataframe with correspondence between CID and EID.
+        @return:                The centroid ID of the centroid, i.e. input 66801 -> output "int_0".
+        """
+        return df[df['ID']==eid]['Name'].values[0]
     
     def get_link_flow(self, road_id, time_interval, time_type='string'):
         """
@@ -282,7 +299,8 @@ class AimsunAnalyzer:
         # Here we do the average over vehicles. Get a idea of standard deviation
         travel_time = self.vehSectTrajectory[selective]["travelTime"].mean()
         return travel_time
-        # try to get the link travel time from different tables (MIVEHTRAJECTORY or MISECTVEHTRAJECTORY) amd compare them
+    
+    # try to get the link travel time from different tables (MIVEHTRAJECTORY or MISECTVEHTRAJECTORY) amd compare them
     def get_OD_travel_time_aux(self, o_id, d_id, time_interval, time_type='string'):
         """
         Returns the mean travel time, demand, boolean selection to travel from an origin ID to a destination ID, within a certain time interval.
@@ -410,7 +428,6 @@ class AimsunAnalyzer:
                                 
         @return:                None.
         """
-        
         if dist_type == 'travel time':
             xlabel = 'Travel time (s)'
             _, _, selective = self.get_OD_travel_time_aux(o_id, d_id, time_interval, time_type)
@@ -490,20 +507,70 @@ class AimsunAnalyzer:
         """
         self.get_total_demand_distribution('distance', 'All', 'All', separate=separate)
         self.get_total_demand_distribution('travel time', 'All', 'All', separate=separate)
-    def get_path_flow(self, o_id, d_id, distribution_type, time_interval):
+    
+    # CAUTION: for now, only available to computer path flow between external centroids.
+    def get_path_flow(self, o_id, d_id, use_cid, connection_df, IDcorr_df, time_interval, time_type):
         """
         Returns the path flow from an origin ID to a destination ID, within a certain time interval.
+        
+        @param o_id:            The ID of the origin centroid.
+        @param d_id:            The ID of the destination centroid.
+        @param use_cid:         If use_cid = True, o_id and d_id are centroid ID instead of external ID, i.e. o_id = "ext_13"
+        @param connection_df:   The dataframe with correspondence of centroid connections.
+        @param IDcorr_df:       The dataframe with correspondence between centroid CID and EID.
+        @param time_interval:   The starting time interval, represented as a string, i.e. "14:45", an integer 3, or "All".
+        @param time_type:       The type of the input time_interval, can be "string", "int" or "All", 
+                                if "string" or "int", the function computes the statistics over the specified interval, 
+                                otherwise over the whole simulation. Default "string".
 
-        @param o_id:            The external ID of the origin centroid.
-        @param d_id:            The external ID of the destination centroid.
-        @param time_interval:   The starting time interval, represented as a string, i.e. "14:45", or an int.
-
-        @return:                The path flow within the time interval between start_time and end_time and
-                                from o_id to d_id formatted as [(road_ids_1, flow_1), (road_ids_2, flow_2), ...]
+        @return:                The path flow within the time interval from o_id to d_id 
+                                formatted as {(road_ids_1): flow_1, (road_ids_2): flow_2, ...}
         """
-        # To do
-        pass
-    
+        def centroidConnectionExtExt(cid, df, start):
+            # Caution: external centroid connections only.
+            """
+            Given the centroid id of an external centroid, return the road eid it is connected to. 
+            @param cid:         The centroid ID of a centroid, i.e. ext_4".
+            @param df:          The dataframe with correspondence centroid connections.
+            @param start:       If start = True, return the "from connection", i.e. "ext_4" -> 30044.
+                                If start = False, return the "to connection", i.e. "ext_4" -> 35160.
+            @return:            The external ID of the road the centroid is connected to.
+            """
+            if start:
+                return int(df[df['CentroidID']==cid]['From Connection IDs'].values[0])
+            else:
+                return int(df[df['CentroidID']==cid]['To Connection IDs'].values[0])
+            
+        ext_origin = o_id
+        ext_dest = d_id
+        if not use_cid:
+            ext_origin = self.EID2CID(o_id, IDcorr_df)
+            ext_dest = self.EID2CID(d_id, IDcorr_df)
+        print(ext_origin, ext_dest)
+        
+        origin_road_eid = centroidConnectionExtExt(ext_origin, connection_df, start=True)
+        dest_road_eid = centroidConnectionExtExt(ext_dest, connection_df, start=False)
+        print(origin_road_eid, dest_road_eid)
+        
+        veh_ids = self.vehSectTrajectory['oid'].unique()
+        vehicle_path = []
+
+        if time_type=='int':
+            time = time_interval
+        elif time_type=="string":
+            time = analyzer.convert_time_str_to_int(time_interval)
+
+        for vid in veh_ids:
+            df = analyzer.vehSectTrajectory[analyzer.vehSectTrajectory['oid']==vid]
+            row_time = analyzer.convert_time_second_to_int(df["exitTime"].iloc[0])
+            if(time_interval!='All'):
+                if((row_time == time) and (df["sectionId"].iloc[0]==origin_road_eid) and (df["sectionId"].iloc[-1]==dest_road_eid)):
+                    vehicle_path.append(df["sectionId"].values)
+            else:
+                if((df["sectionId"].iloc[0]==origin_road_eid) and (df["sectionId"].iloc[-1]==dest_road_eid)):
+                    vehicle_path.append(df["sectionId"].values)
+        return vehicle_path
+
     def compare_flow(self, flow_ground):
         """
         Plots the comparison graph bewteen non-zero simulation flow and corresponding ground-truth flow. 
@@ -589,24 +656,6 @@ class AimsunAnalyzer:
         """
         travel_time_ground['interval'] = travel_time_ground.apply(lambda row: self.convert_time_second_to_int(row['time']*3600), axis=1)
         travel_time_ground.at[(travel_time_ground["interval"]<0) | (travel_time_ground["interval"]>24), 'interval'] = -1
-        
-        def CID2EID(cid, df):
-            """
-            Given Centroid ID of a centroid, returns the external ID of this centroid.
-            @param cid:            The centroid ID of a centroid, i.e. "int_0" or "ext_13".
-            @param df:             The dataframe with correspondence between CID and EID.
-            @return:               The external ID of the centroid, i.e. input "int_0" -> output 66801.
-            """
-            return df[df['Name']==cid]['ID'].values[0]
-
-        def EID2CID(eid, df):
-            """
-            Given external ID of a centroid, returns the Centroid ID of this centroid.
-            @param eid:             The external ID of a centroid, i.e. 66801.
-            @param df:              The dataframe with correspondence between CID and EID.
-            @return:                The centroid ID of the centroid, i.e. input 66801 -> output "int_0".
-            """
-            return df[df['ID']==eid]['Name'].values[0]
 
         def plot_travel_time(df, od_ids, time_intervals):
             """
@@ -654,8 +703,8 @@ class AimsunAnalyzer:
             veh = veh[veh["travelTime"]>0].groupby(['origin', 'destination','corres_ground_interval'])[["travelTime"]].mean()
             veh = veh.reset_index()
 
-            veh["CID_O"]= veh.apply(lambda row: EID2CID(row["origin"], ID_corr),axis=1)
-            veh["CID_D"]= veh.apply(lambda row: EID2CID(row["destination"], ID_corr),axis=1)
+            veh["CID_O"]= veh.apply(lambda row: self.EID2CID(row["origin"], ID_corr),axis=1)
+            veh["CID_D"]= veh.apply(lambda row: self.EID2CID(row["destination"], ID_corr),axis=1)
 
             veh["ground_travel_time"] = -1
 
@@ -690,4 +739,3 @@ class AimsunAnalyzer:
         # Put this outside the class
         if self.ground_truth_data is None:
             print("Error: No ground truth has been passed in.")
-            
