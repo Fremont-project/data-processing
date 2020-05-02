@@ -767,5 +767,159 @@ class AimsunAnalyzer:
         if self.ground_truth_data is None:
             print("Error: No ground truth has been passed in.")
 
+    def simulation_detector_plot(self, detector_id_to_road_id, detector_id, output_folder):
+        """
+        @param detector_id_to_road_id:  dictionary mapping from detector id to road id
+        @param detector_id:             detector id used to obtain road id from simulation
+        @param output_folder:           output folder for saving plot images
+        """
+        # get 15-min timesteps
+        time_steps = []
+        for hr in range(0, 24):
+            for min in range(0, 60, 15):
+                time_steps.append(self.format_timestep(hr, min))
+
+        # get flows for this detector
+        road_id = detector_id_to_road_id[int(detector_id)]
+        road_flow = self.sections[self.sections["eid"] == str(road_id)]
+
+        # create dictionary of timestep to flow
+        time_flow_list = []
+        for time in time_steps:
+            sqtime = self.convert_time_str_to_int(time)
+            # simulation flow unit: # of vehicles per hour, have to convert to per 15 min
+            flow = road_flow[road_flow["ent"] == sqtime]["flow"].sum() / 4
+            time_flow_list.append([time, flow])
+
+        # faster to create data frame in one shot
+        time_flow_df = pd.DataFrame(time_flow_list, columns=['dt_15', 'Flow (Veh/15min)'])
+        # create trip profiles and save to png
+        self.save_trip_profile(time_flow_df, detector_id, output_folder)
+        self.save_trip_profile(time_flow_df, detector_id, output_folder, is_afternoon=True)
+
+    def format_timestep(self, hr, min):
+        hr = '0' + str(hr) if hr < 10 else str(hr)
+        min = '0' + str(min) if min < 10 else str(min)
+        return hr + ':' + min
+
+    def save_trip_profile(self, curr_detector_flow, detector_id, output_folder, is_afternoon=False):
+        fig = plt.figure(figsize=(8, 6))
+        ax = fig.add_subplot(111)
+        if is_afternoon:
+            one_pm = 13 * 4  # 1pm
+            eight_pm = 20 * 4  # 8pm
+            ax.plot(curr_detector_flow.dt_15[one_pm: eight_pm], curr_detector_flow['Flow (Veh/15min)'][one_pm: eight_pm])
+        else:
+            ax.plot(curr_detector_flow.dt_15, curr_detector_flow['Flow (Veh/15min)'])
+
+        every_nth = 8
+        for n, label in enumerate(ax.xaxis.get_ticklabels()):
+            if n % every_nth != 0:
+                label.set_visible(False)
+
+        trip_type = "trip profile"
+        if is_afternoon:
+            trip_type = "afternoon " + trip_type
+        plt.xticks(rotation=60)
+        plt.title("detector " + str(detector_id) + " " + trip_type)
+        plt.xlabel("time frame")
+        plt.ylabel("trip count")
+        filename = "detector_" + str(detector_id) + "_" + trip_type.replace(" ", "_")
+        plt.savefig(os.path.join(output_folder, filename))
+        plt.close(fig)
+
+    def plot_groundtruth_and_simulation_flow(self, flow_processed_df, detector_id, output_folder):
+        """
+        @param flow_processed_df:   dataframe with flow data ie flow_processed_2019.csv
+        @param detector_id:         detector id for trip profile
+        @param output_folder:       folder to save the plot
+        """
+        # filter flow to contain only for this detector id
+        flow_processed_df = flow_processed_df[flow_processed_df['Detector_Id'] == int(detector_id)]
+        road_id = int(flow_processed_df.iloc[0]['Road_Id'])
+        # process df to be two columns, timestep (dt_15) and counts (ground_truth)
+        start_time_idx = list(flow_processed_df.columns).index('00:00')
+        flow_processed_df = flow_processed_df.transpose()[start_time_idx:]
+        flow_processed_df['dt_15'] = flow_processed_df.index
+        flow_processed_df.index = range(flow_processed_df.shape[0])
+        flow_processed_df = flow_processed_df[reversed(flow_processed_df.columns)]
+        flow_processed_df.columns = ['dt_15', 'ground_truth']
+
+        # get simulation flows for this detector/road
+        road_flow = self.sections[self.sections["eid"] == str(road_id)]
+
+        # simulation flows for each time step
+        time_flow_list = []
+        for time in flow_processed_df['dt_15']:
+            sqtime = self.convert_time_str_to_int(time)
+            # simulation flow unit: # of vehicles per hour, have to convert to per 15 min
+            flow = road_flow[road_flow["ent"] == sqtime]["flow"].sum() / 4
+            time_flow_list.append(flow)
+        flow_processed_df['simulation'] = time_flow_list
+
+        self.save_multi_trip_profile(flow_processed_df, detector_id, output_folder)
+        self.save_multi_trip_profile(flow_processed_df, detector_id, output_folder, is_afternoon=True)
+
+    def save_multi_trip_profile(self, flow_df, detector_id, output_folder, is_afternoon=None):
+        """
+        @param flow_df:         dataframe with first column being x and remaining columns being y's for plot
+        @param detector_id:     detector_id for naming
+        @param output_folder:   folder to save plot image
+        @param is_afternoon:    defined as 1pm-8pm, if true plot x-axis is in this range
+        """
+        fig = plt.figure(figsize=(8, 6))
+        ax = fig.add_subplot(111)
+
+        # create xy axis pairs
+        x_axis = flow_df.columns[0]
+        y_axis_many = flow_df.columns[1:]
+        xy_pairs = []
+        for y_axis in y_axis_many:
+            xy_pairs.append([x_axis, y_axis])
+
+        # filter for afternoon
+        if is_afternoon:
+            one_pm = 13 * 4  # 1pm
+            eight_pm = 20 * 4  # 8pm
+            flow_df = flow_df[one_pm: eight_pm]
+
+        # plot
+        for xy in xy_pairs:
+            ax.plot(xy[0], xy[1], data=flow_df, label=xy[1])
+        ax.legend()
+
+        # plot every 8th tick label
+        every_nth = 8
+        for n, label in enumerate(ax.xaxis.get_ticklabels()):
+            if n % every_nth != 0:
+                label.set_visible(False)
+
+        # format plot
+        trip_type = "trip profile"
+        if is_afternoon:
+            trip_type = "afternoon " + trip_type
+        plt.xticks(rotation=60)
+        plt.title("detector " + str(detector_id) + " " + trip_type)
+        plt.xlabel("time frame")
+        plt.ylabel("trip count")
+        filename = "detector_" + str(detector_id) + "_" + trip_type.replace(" ", "_")
+        plt.savefig(os.path.join(output_folder, filename))
+        plt.close(fig)
+
+def main():
+    pass
+    # city detector flow info
+    # data_path = "/Users/edson/Dropbox/Private Structured data collection"
+    # city_detector_flow = pd.read_csv(
+    # data_path + '/Data processing/Auxiliary files/Demand/Flow_speed/flow_processed_2019.csv')
+    # output_folder = data_path + "/Data processing/Kepler maps/Demand/Flow_speed/Trip_profiles/"
+    # city_detector_plot(201901, city_detector_flow, output_folder)
+
+    # for detector_id in city_detector_flow.Detector_Id:
+    #     city_detector_plot(detector_id, city_detector_flow, output_folder)
+
 def stop_code():
     raise(ValueError("User stopping code"))
+
+if __name__ == '__main__':
+    main()
