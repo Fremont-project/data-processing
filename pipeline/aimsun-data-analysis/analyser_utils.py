@@ -179,6 +179,9 @@ class AimsunAnalyzer:
         self.model_info = SimulatorInfo(select_all_from_table(self.conn, "SIM_INFO", should_print = False)[-1])
         self.start_hour = int(self.model_info.start_time)//3600
         self.start_min = int((self.model_info.start_time) - self.start_hour * 3600)//60
+        self.end_hour = int(self.model_info.start_time + self.model_info.duration)//3600
+        self.end_min = int((self.model_info.start_time + self.model_info.duration) - self.end_hour * 3600)//60
+        
         self.interval_second = self.model_info.duration//self.model_info.simstatintervals
         print("Simulation starts at "+str(self.start_hour)+"h"+str(self.start_min)+"min")
         print("=====Model Information Loaded.=====")
@@ -337,7 +340,7 @@ class AimsunAnalyzer:
             selective = selective & (self.vehTrajectory["interval"]==time)
         if np.sum(selective)==0:
             print("No OD travel time/demand record found for origin {} and destination {} at time interval {}".format(o_id, d_id, time))
-            return -1
+            return -1, -1, []
         
         # Here we do the average over vehicles. Get a idea of standard deviation. Maybe use that to get some notion of regret.
         travel_time = self.vehTrajectory[selective]["travelTime"].mean()
@@ -402,7 +405,7 @@ class AimsunAnalyzer:
             selective = selective & (self.vehTrajectory["interval"]==time)
         if np.sum(selective)==0:
             print("No OD distance record found for origin {} and destination {} at time interval {}".format(o_id, d_id, time))
-            return -1
+            return -1, []
         
         # Here we do the average over vehicles. Get a idea of standard deviation. Maybe use that to get some notion of regret.
         distance = self.vehTrajectory[selective]["travelledDistance"].mean()
@@ -458,7 +461,7 @@ class AimsunAnalyzer:
         self.plot_distribution(ax, data, title, xlabel, ylabel);
         
     # Parameter separate means separating commuter with resident
-    def get_total_demand_distribution(self, dist_type, time_interval, time_type='string', separate=False):
+    def get_total_demand_distribution(self, dist_type, time_interval, time_type='string', separate=False, commuter_sid=None, resident_sid=None):
         """
         Plots the total distribution of OD travel time or distance within the time interval for all pairs of OD.
 
@@ -488,9 +491,9 @@ class AimsunAnalyzer:
             fig = plt.figure(figsize=(15, 5))
             ylabel = "Number of vehicles"
             
-            selective_resident = selective & (self.vehTrajectory['sid']==63068)
+            selective_resident = selective & (self.vehTrajectory['sid']==resident_sid)
             data_resident = self.vehTrajectory[selective_resident][col]
-            selective_commuter = selective & (self.vehTrajectory['sid']==63069)
+            selective_commuter = selective & (self.vehTrajectory['sid']==commuter_sid)
             data_commuter = self.vehTrajectory[selective_commuter][col]
             
             ax1 = fig.add_subplot(1,2,1)
@@ -509,7 +512,7 @@ class AimsunAnalyzer:
             ylabel = "Number of vehicles"
             self.plot_distribution(ax, data, title, xlabel, ylabel);
         
-    def get_total_distribution(self, separate = False):
+    def get_total_distribution(self, separate = False, commuter_sid=None, resident_sid=None):
         """
         Plots the total distribution of OD travel time and distance, over all time intervals and for all pairs of OD.
 
@@ -517,8 +520,8 @@ class AimsunAnalyzer:
         
         @return:                None.
         """
-        self.get_total_demand_distribution('distance', 'All', 'All', separate=separate)
-        self.get_total_demand_distribution('travel time', 'All', 'All', separate=separate)
+        self.get_total_demand_distribution('distance', 'All', 'All', separate=separate, commuter_sid=commuter_sid, resident_sid=resident_sid)
+        self.get_total_demand_distribution('travel time', 'All', 'All', separate=separate, commuter_sid=commuter_sid, resident_sid=resident_sid)
     
     # CAUTION: for now, only available to computer path flow between external centroids.
     def get_path_flow(self, o_id, d_id, use_cid, connection_df, IDcorr_df, time_interval, time_type):
@@ -583,23 +586,22 @@ class AimsunAnalyzer:
                     vehicle_path.append(df["sectionId"].values)
         return vehicle_path
 
-    def compare_flow(self, flow_ground):
+    def compare_flow(self, flow_ground, time_intervals, sim_name):
         """
         Plots the comparison graph bewteen non-zero simulation flow and corresponding ground-truth flow. 
 
         @param flow_ground:     The ground-truth flow data.
+        @param time_intervals:  The intervals included to compare flow
+        @param sim_name:        The name of the simulation.
 
         @return:                None.             
         """
         flow_ground["Road_Id"] = flow_ground["Road_Id"].astype(int).astype(str)
         flow_ground["Detector_Id"] = flow_ground["Detector_Id"].astype(int).astype(str)
-        
-        # select valid time interval
-        time_interval = flow_ground.loc[:,"14:0":"19:45"].columns
 
         # ground flow unit: # vehicles per 15min
         # simluation flow unit: # of vechicles per hour, have to be converted it to per 15 min
-        for time in time_interval:
+        for time in time_intervals:
             flow_ground["sim_flow_"+str(time)]=flow_ground.apply(lambda row : (self.get_link_flow(row['Road_Id'], time))/4, axis=1)
         
         # plot flow biplot for all time intervals
@@ -607,7 +609,7 @@ class AimsunAnalyzer:
         ground_data_all = pd.Series()
         sim_data_all = pd.Series()
 
-        for time in time_interval:
+        for time in time_intervals:
             to_show = flow_ground["sim_flow_"+str(time)]!=0 # only compare when the simulation flow is not 0.
             plt.scatter(flow_ground[to_show][time], flow_ground[to_show]["sim_flow_"+str(time)])
             sim_data_all = sim_data_all.append(flow_ground[to_show]["sim_flow_"+str(time)], ignore_index=True)
@@ -615,15 +617,16 @@ class AimsunAnalyzer:
 
         biplot(ground_data_all.values, sim_data_all.values, 
                "flow ground data (veh/15 min)", "flow simulation data (veh/15 min)", 
-               "Flow comparsion between sim and ground data\n using Aimsun Week 25 microsimulation", 
-               "flow_comparsion.png");
+               "Flow comparsion between sim and ground data\n using Aimsun {} microsimulation".format(sim_name), 
+               "flow_comparsion_{}.png".format(sim_name));
 
-    def compare_speed(self, speed_ground, speed_raw_folder):
+    def compare_speed(self, speed_ground, speed_raw_folder, sim_name):
         """
         Plots the comparison graph bewteen non-zero simulation speed and corresponding ground-truth speed. 
 
         @param speed_ground:     The ground-truth speed data.
-        @param speed_raw_folder: The folder containing all raw files for speed survey, used to extract mean speed. 
+        @param speed_raw_folder: The folder containing all raw files for speed survey, used to extract mean speed.
+        @param sim_name:         The name of the simulation.
 
         @return:                 None.                         
         """
@@ -633,8 +636,16 @@ class AimsunAnalyzer:
         speed_ground["EndTime"] = speed_ground["EndTime"].str[:-3]
 
         # if the measured time for ground data is not within the simulation time 2pm-8pm, label the interval as 0.
+        start_time = "{}:{}".format(self.start_hour, self.start_min)
+        if(self.start_min ==0):
+            start_time = start_time+"0"
+        end_time = "{}:{}".format(self.end_hour, self.end_min)
+        if(self.end_min ==0):
+            end_time = end_time+"0"
+            
         speed_ground["SimTime"] = speed_ground["StartTime"]
-        speed_ground.at[(speed_ground["SimTime"]<"14:00") | (speed_ground["SimTime"]>"20:00"), "SimTime"] = "14:00"
+        speed_ground.at[speed_ground["SimTime"]<start_time, "SimTime"] = start_time
+        speed_ground.at[speed_ground["SimTime"]>end_time, "SimTime"] = end_time
 
         for f in os.listdir(speed_raw_folder):
             if('xls' in f):
@@ -653,14 +664,16 @@ class AimsunAnalyzer:
 
         biplot(speed_ground[to_show]["Mean_speed (mph)"].values, speed_ground[to_show]["sim_speed"].values, 
                "speed ground data (mph)", "speed simulation data (mph)", 
-               "Speed comparsion between sim and ground data\n using Aimsun Week 25 microsimulation", 
-               "speed_comparsion.png");
+               "Speed comparsion between sim and ground data\n using Aimsun {} microsimulation".format(sim_name), 
+               "speed_comparsion_{}.png".format(sim_name));
 
-    def compare_travel_time(self, travel_time_ground, ID_corr, od_ids='All', time_intervals='All'):
+    def compare_travel_time(self, travel_time_ground, ID_corr, sim_name, od_ids='All', time_intervals='All'):
         """
         Plots the comparison graph bewteen simulation and ground-truth travel time between external centroids only. 
 
         @param travel_time_ground: The ground-truth travel time data. Currently only ext-ext travel time is available in the ground file.
+        @param ID_corr:            The dataframe with correspondence between CID and EID.
+        @param sim_name:           The name of the simulation.
         @param od_ids:             A list of tuples of CID of the centroids (not EID), i.e. [("ext13", "ext20"), ("ext20", "ext13"), ...], default 'All'.
         @time_intervals:           A list of time intervals as integers, i.e. [0,4,8,....], default 'All'.
         
@@ -669,13 +682,14 @@ class AimsunAnalyzer:
         travel_time_ground['interval'] = travel_time_ground.apply(lambda row: self.convert_time_second_to_int(row['time']*3600), axis=1)
         travel_time_ground.at[(travel_time_ground["interval"]<0) | (travel_time_ground["interval"]>24), 'interval'] = -1
 
-        def plot_travel_time(df, od_ids, time_intervals):
+        def plot_travel_time(df, od_ids, time_intervals, sim_name):
             """
             Draws the biplot of travel time for some od pairs within some time intervals.
             @param df:              The dataframe containing simulation and ground travel time.
             @param od_ids:          A list of tuples of CID of the centroids (not EID), i.e. [("ext13", "ext20"), ("ext20", "ext13"), ...], default 'All'.
             @time_intervals:        A list of time intervals as integers, i.e. [0,4,8,....], default 'All'.
-        
+            @param sim_name:        The name of the simulation.
+            
             @return:                None.
             """
             selective = (df["travelTime"]>0) & (df["ground_travel_time"]>0)
@@ -696,15 +710,16 @@ class AimsunAnalyzer:
             
             biplot(df[to_show]["ground_travel_time"].values, df[to_show]["travelTime"].values, 
                    "travel time ground data (s)", "travel time simulation data (s)", 
-                   "Travel time comparsion between sim and ground data\n using Aimsun Week 25 microsimulation", 
-                   "travel_time_comparison.png");
+                   "Travel time comparsion between sim and ground data\n using Aimsun {} microsimulation".format(sim_name), 
+                   "travel_time_comparison_{}.png".format(sim_name));
 
-        def compare_travel_time_ext_ext(od_ids, time_intervals):
+        def compare_travel_time_ext_ext(od_ids, time_intervals, sim_name):
             """
             Draws the biplot of travel time for some od pairs within some time intervals.
             @param od_ids:          A list of tuples of CID of the centroids (not EID), i.e. [("ext13", "ext20"), ("ext20", "ext13"), ...], default 'All'.
             @time_intervals:        A list of time intervals as integers, i.e. [0,4,8,....], default 'All'.
-        
+            @param sim_name:        The name of the simulation.
+            
             @return:                None.
             """
             veh = self.vehTrajectory.copy()
@@ -733,10 +748,10 @@ class AimsunAnalyzer:
                                                 ( travel_time_ground['ori_external_id']==int(row['CID_O'][4:]) ) & \
                                                 ( travel_time_ground['des_external_id']==int(row['CID_D'][4:]) )]['travel_time'].values[0], axis=1) 
 
-            plot_travel_time(veh, od_ids=od_ids, time_intervals=time_intervals)
+            plot_travel_time(veh, od_ids=od_ids, time_intervals=time_intervals, sim_name=sim_name)
             # plot_travel_time(analyzer.vehTrajectory, od_ids= [("ext_13", "ext_20"), ("ext_20", "ext_13")], time_intervals=[0,1,2,3,4,5,6,7,8,9])
         
-        compare_travel_time_ext_ext(od_ids=od_ids, time_intervals=time_intervals)
+        compare_travel_time_ext_ext(od_ids=od_ids, time_intervals=time_intervals, sim_name=sim_name)
 
     def compare_path_flow(self, od_ids='All', time_intervals='All'):
         """
