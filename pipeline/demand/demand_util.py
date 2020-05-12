@@ -1097,15 +1097,16 @@ def get_path_by_here_api(start, end, stop_on_error=False):
                 stop_code('no routes found for start={}, destination={}'.format(start, end))
             return None
     else:
-        # request produced an error, we should stop code completely, likely that other requests will fail
-        print('response={}'.format(response))
-        print('start={}, destination={}'.format(start_pos, end_pos))
-        response.raise_for_status()
-
+        if stop_on_error:
+            response.raise_for_status()
+        # Here API throws an error on some bodies of water, keep going if stop on error is false
+        return None
+        # print('response={}'.format(response))
+        # print('start={}, destination={}'.format(start_pos, end_pos))
 
 # legacy code method, used to get path from start to end via Google API
 def get_path_by_google_api(start_point, end_point, stop_on_error=False):
-    api_key = None  # todo need a google API key
+    api_key = None  # removing api key from pushing to github
     google_url = "https://maps.googleapis.com/maps/api/directions/json"
 
     # convention on shp files for a geo-point is lng,lat
