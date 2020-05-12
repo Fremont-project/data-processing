@@ -17,6 +17,7 @@ import scipy
 import matplotlib
 import sqlite3
 import pandas as pd
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import datetime
 import statsmodels.api as sm
@@ -906,17 +907,9 @@ class AimsunAnalyzer:
         plt.savefig(os.path.join(output_folder, filename))
         plt.close(fig)
 
+
 def main():
     pass
-    # city detector flow info
-    # data_path = "/Users/edson/Dropbox/Private Structured data collection"
-    # city_detector_flow = pd.read_csv(
-    # data_path + '/Data processing/Auxiliary files/Demand/Flow_speed/flow_processed_2019.csv')
-    # output_folder = data_path + "/Data processing/Kepler maps/Demand/Flow_speed/Trip_profiles/"
-    # city_detector_plot(201901, city_detector_flow, output_folder)
-
-    # for detector_id in city_detector_flow.Detector_Id:
-    #     city_detector_plot(detector_id, city_detector_flow, output_folder)
 
 def stop_code():
     raise(ValueError("User stopping code"))
