@@ -963,7 +963,7 @@ def create_external_taz(dir_taz, sections_df, output_dir=None):
 
     # 3. create external TAZs:
     # create mesh of points
-    mesh_density = 0.1  # should be 0.001 (creates 2 million points)
+    mesh_density = 0.001  # should be 0.001 (creates 2 million points)
     x_min, x_max = np.min(expanded_hull_points[:, 0]), np.max(expanded_hull_points[:, 0])
     y_min, y_max = np.min(expanded_hull_points[:, 1]), np.max(expanded_hull_points[:, 1])
     x, y = np.meshgrid(np.arange(x_min, x_max, mesh_density), np.arange(y_min, y_max, mesh_density))
@@ -990,7 +990,7 @@ def create_external_taz(dir_taz, sections_df, output_dir=None):
     project_delimitation_line = LineString(project_delimitation + [project_delimitation[0]])
 
     testing = True
-    sample_size = 2
+    sample_size = 500
     info_point_to_center = []  # desired result
     intersection_to_centroid_paths = []
 
@@ -1032,8 +1032,6 @@ def create_external_taz(dir_taz, sections_df, output_dir=None):
             info_point_to_center.append([point, project_center, closest_centroid, min_distance, path])
 
     if testing:
-        # can start a quick kepler demo on their website using these csv files
-        # center, external centroids, project delimitation, external delimitation
         kepler_map = KeplerGl(height=600)
         kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [project_center]}, crs='epsg:4326'), name='project_center')
         kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': external_centroid_nodes}, crs='epsg:4326'), name='external_centroids')
