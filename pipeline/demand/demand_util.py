@@ -860,7 +860,7 @@ project_delimitation.append((-121.94613010599994, 37.55466923100005))
 project_delimitation.append((-121.94277062699996, 37.55273259000006))
 
 
-def create_external_taz(dir_taz, sections_df):
+def create_external_taz(dir_taz, sections_df, output_dir=None):
     """
     3 Steps for Create external TAZs
     1. Create a external demand delimitation:
@@ -931,12 +931,6 @@ def create_external_taz(dir_taz, sections_df):
     buffer_coefficient = .05
     expanded_hull_points = hull_points + buffer_coefficient * buffer_directions
 
-    ## to visualize the points and convex hulls
-    # plt.plot(points[:, 0], points[:, 1], 'o')
-    # plt.plot(hull_points[:, 0], hull_points[:, 1], 'bo--', lw=2)
-    # plt.plot(expanded_hull_points[:, 0], expanded_hull_points[:, 1], 'ro--', lw=2)
-    # plt.show()
-
     # 2. create external centroids:
     # select roads with no fnode and capacity above 800 from sections_df
     sections_df = sections_df[pd.isnull(sections_df['fnode']) & (sections_df['capacity'] > 800)]
@@ -969,7 +963,7 @@ def create_external_taz(dir_taz, sections_df):
 
     # 3. create external TAZs:
     # create mesh of points
-    mesh_density = 0.001  # should be 0.001 (creates 2 million points)
+    mesh_density = 0.1  # should be 0.001 (creates 2 million points)
     x_min, x_max = np.min(expanded_hull_points[:, 0]), np.max(expanded_hull_points[:, 0])
     y_min, y_max = np.min(expanded_hull_points[:, 1]), np.max(expanded_hull_points[:, 1])
     x, y = np.meshgrid(np.arange(x_min, x_max, mesh_density), np.arange(y_min, y_max, mesh_density))
@@ -996,7 +990,7 @@ def create_external_taz(dir_taz, sections_df):
     project_delimitation_line = LineString(project_delimitation + [project_delimitation[0]])
 
     testing = True
-    sample_size = 500
+    sample_size = 2
     info_point_to_center = []  # desired result
     intersection_to_centroid_paths = []
 
@@ -1004,6 +998,7 @@ def create_external_taz(dir_taz, sections_df):
     if testing:
         mesh_points = random.sample(mesh_points, sample_size)
 
+    distance_to_centroid_threshold = 0.005
     for point in mesh_points:
         path = get_path_by_here_api(point, project_center, stop_on_error=False)
         if not path:
@@ -1028,18 +1023,30 @@ def create_external_taz(dir_taz, sections_df):
                 min_distance = dist
                 closest_centroid = centroid
 
-        # path intersection to centroid
-        intersection_to_centroid = [(intersect_point.x, intersect_point.y), (closest_centroid.x, closest_centroid.y)]
-        intersection_to_centroid_paths.append(LineString(intersection_to_centroid))
+        if min_distance < distance_to_centroid_threshold:
+            # path intersection to centroid
+            intersection_to_centroid = [(intersect_point.x, intersect_point.y), (closest_centroid.x, closest_centroid.y)]
+            intersection_to_centroid_paths.append(LineString(intersection_to_centroid))
 
-        # write result to csv
-        info_point_to_center.append([point, project_center, closest_centroid, min_distance, path])
+            # write result to csv
+            info_point_to_center.append([point, project_center, closest_centroid, min_distance, path])
 
     if testing:
         # can start a quick kepler demo on their website using these csv files
-        pd.DataFrame({'geometry': mesh_points}).to_csv('test/mesh_points.csv')
-        pd.DataFrame({'geometry': [l[-1] for l in info_point_to_center]}).to_csv('test/paths.csv')
-        pd.DataFrame({'geometry': intersection_to_centroid_paths}).to_csv('test/intersect_to_centroids.csv')
+        # center, external centroids, project delimitation, external delimitation
+        kepler_map = KeplerGl(height=600)
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [project_center]}, crs='epsg:4326'), name='project_center')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': external_centroid_nodes}, crs='epsg:4326'), name='external_centroids')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [project_delimitation_line]}, crs='epsg:4326'), name='project_delimitation')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [external_delimitation]}, crs='epsg:4326'), name='external_delimitation')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': mesh_points}, crs='epsg:4326'), name='mesh_points')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [l[-1] for l in info_point_to_center]}, crs='epsg:4326'), name='paths')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': intersection_to_centroid_paths}, crs='epsg:4326'), name='intersection_to_centroid_paths')
+        file_path = 'mesh_points_to_external_centroids.html'
+        if output_dir:
+            file_path = os.path.join(output_dir, file_path)
+        kepler_map.save_to_html(file_name=file_path)
+
 
     def to_csv(file_name, header, lines):
         def add_quotes(val):
@@ -1051,7 +1058,10 @@ def create_external_taz(dir_taz, sections_df):
             csv.write(','.join(map(add_quotes, line)) + '\n')
 
     # write results to csv
-    to_csv('test/mesh_point_to_centroid.csv',
+    mesh_points_to_centroid_file_path = 'mesh_point_to_centroid.csv'
+    if output_dir:
+        mesh_points_to_centroid_file_path = os.path.join(output_dir, mesh_points_to_centroid_file_path)
+    to_csv(mesh_points_to_centroid_file_path,
            'origin_mesh_point,destination,closest_external_centroid,distance_to_centroid,path',
            info_point_to_center)
 
@@ -1150,7 +1160,8 @@ def test_create_external_taz():
     sections_df = gpd.GeoDataFrame.from_file(sections_path)
     sections_df = sections_df.to_crs(epsg=4326)
     sections_df = sections_df.set_geometry('geometry')
-    create_external_taz(sfcta_folder, sections_df)
+    output_dir = os.path.join(data_path, 'Data processing', 'Kepler maps', 'HereAPI')
+    create_external_taz(sfcta_folder, sections_df, output_dir)
     pass
 
 
