@@ -804,7 +804,7 @@ def create_shp_file_by_changing_speeds_of_roads(dir_sections, dir_output):
      @param dir_sections    folder containing sections.shp
      @param dir_output      folder writing the new shp file
     """
-    api_key = "AIzaSyAfHjYZKsMAdqpvvdIAPjaWcwEJU-3b77E"
+    api_key = None
     shape_file = os.path.join(dir_sections, 'sections.shp')
     output_file = os.path.join(dir_output, 'sections_updated_speeds.shp')
     with fiona.collection(shape_file, 'r') as input:
@@ -819,14 +819,14 @@ def create_shp_file_by_changing_speeds_of_roads(dir_sections, dir_output):
                 speed = row['properties']['speed']
                 # print('Name: ', road_name, 'speed', speed)
 
-                # use Google API to get speed limits on desired roads and save them to output
-                if road_name:  # if its a Major road
-                    pass
-                elif speed >= 100:  # highway or on/off ramp
-                    pass
+                # todo use Google API to get speed limits on desired roads and save them to output
 
-                # row_copy['properties']['Id'] = str(match[DETECTOR_ID_NAME])
-                # output.write(row_copy)
+                # if its a Major road or # highway or on/off ramp
+                if road_name or speed >= 100:
+                    row_copy['properties']['speed'] = None  # speed by google api speed
+                    output.write(row_copy)
+
+
     pass
 
 project_delimitation = []
