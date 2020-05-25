@@ -2,19 +2,29 @@
 import numpy as np
 import pandas as pd
 import sklearn.cluster as skc
+from scipy.spatial import ConvexHull
+import matplotlib.pyplot as plt
 
 # geo spacial data analysis
 import geopandas as gpd
 from shapely import wkt
 from keplergl import KeplerGl
+import fiona
 
 # assorted parsing and modeling tools
+import os
 import math
 import csv
 from pytz import utc
 from shutil import copyfile, copytree
 from shapely.ops import nearest_points, unary_union
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, Polygon, MultiPoint
+
+import requests
+import random
+import polyline
+
+from pathlib import Path
 
 
 # importing all the Kepler.gl configurations
@@ -81,7 +91,7 @@ def get_nodes_with_neighborhood(nodes_path, neighborhoods_shp, kepler_config=Non
     nodes = gpd.GeoDataFrame(
         nodes_df, crs='epsg:4326', geometry=gpd.points_from_xy(nodes_df.start_node_lng, nodes_df.start_node_lat))
     gdf_bis = gpd.GeoDataFrame(
-        nodes_df, crs='epsg:4326', geometry=gpd.points_from_xy(nodes_df.end_node_lng, nodes_df.end_node_lat))
+        nodes_df.copy(), crs='epsg:4326', geometry=gpd.points_from_xy(nodes_df.end_node_lng, nodes_df.end_node_lat))
 
     # Adding the end points and the start points together, only keeping some data
     nodes = nodes.append(gdf_bis)
@@ -90,6 +100,9 @@ def get_nodes_with_neighborhood(nodes_path, neighborhoods_shp, kepler_config=Non
     # Joining the neighborhooed on the SFCTA points
     joined_nodes = gpd.sjoin(nodes, neighborhoods_shp, how='left', op='within')
     
+    ## Points that are outside Fremont are associated with neighborhood 22
+    joined_nodes['OBJECTID'].fillna(22, inplace=True)
+
     # Transforming the geopandas shapefile to numpy array
     X = np.zeros((joined_nodes.shape[0], 3))
     X[:,0],X[:,1],X[:,2] = joined_nodes.geometry.x, joined_nodes.geometry.y, joined_nodes.OBJECTID * 100
@@ -164,6 +177,10 @@ def get_taz_from_predict(data, kmeans, neighborhoods_shp, h=.0002, kepler_config
     # Getting the labels of every point in the mesh by joining the neighborhood on the points and using the trained k-mean cluster model
     data_mesh = gpd.GeoDataFrame(crs = 'epsg:4326', geometry=gpd.points_from_xy(xx_col, yy_col))
     data_mesh = gpd.sjoin(data_mesh, neighborhoods_shp, how='left', op='within')
+    
+    ## Mesh point that ae outside Fremont are associated with neighborhood 22
+    data_mesh['OBJECTID'].fillna(22, inplace=True)
+    
     data_mesh = data_mesh[['geometry', 'OBJECTID']]
 
     point_test = np.zeros((i*j,3))
@@ -332,6 +349,16 @@ def get_internal_centroid_connection(section_path, output_taz, debug=False):
     # loading the data
     sections_gdf = to_gdf(section_path)
     int_taz_shapefile, _ = loading_taz(output_taz)
+    
+    #########################################################################
+    #########################################################################
+    ################# LINE TO CHANGE ONCE EXTERNAL TAZ DONE #################
+    ## Quick fix while working on the external TAZs!!!
+    int_taz_shapefile = int_taz_shapefile[int_taz_shapefile.CentroidID != 'int_68']
+    int_taz_shapefile = int_taz_shapefile.reset_index(drop=True)
+    #########################################################################
+    #########################################################################
+    #########################################################################
     
     # Find all road sections in road network with either no fnode or no tnode
     no_fnode = sections_gdf[sections_gdf['fnode'].map(math.isnan) == True]
@@ -562,7 +589,7 @@ def write_centroid_connections(output_path, section_path, output_taz):
     """
     # loading the data
     sections_gdf = to_gdf(section_path)
-    int_taz_shapefile, _ = loading_taz(output_taz)
+#     int_taz_shapefile, _ = loading_taz(output_taz)
     ext_cen_shapefile = to_gdf(output_taz + "/External_centroids.shp")
     
     #get internal centroid connections
@@ -627,10 +654,8 @@ def get_sfcta_dataframe(int_int_path, int_ext_path, ext_int_path):
     int_int_trips = pd.read_csv(int_int_path)
     int_ext_trips = pd.read_csv(int_ext_path)
     ext_int_trips = pd.read_csv(ext_int_path)
-
     internal_trips = pd.DataFrame.merge(int_int_trips, int_ext_trips, 'outer')
     internal_trips = pd.DataFrame.merge(internal_trips, ext_int_trips, 'outer')
-    
     return internal_trips
 
 def join_taz_on_sfcta_data(internal_trips, tazs):
@@ -654,9 +679,14 @@ def join_taz_on_sfcta_data(internal_trips, tazs):
     
     return internal_trips_end
 
+def shift_time(demand_df, column, time_to_shift):
+    demand_df[column] = demand_df[column].apply(lambda x: pd.Timestamp(x))
+    demand_df[column] += pd.to_timedelta(time_to_shift, unit='h')
+    demand_df[column] = demand_df[column].apply(lambda x: x.time())
+
 def cluster_demand_15min(df):
     """
-    Exports an origin-destination matrix into CSV.
+    Return an origin-destination matrix as pandas dataframe.
     
     -----------------------------------------------
     | CentroidID_O | CentroidID_D | dt_15 | count |
@@ -666,25 +696,13 @@ def cluster_demand_15min(df):
     ----------
     df : DataFrame
         DataFrame representing OD matrix
-    output_path : string
-        Output path
     """
-    demand_df = df
-    demand_df['dt'] = pd.to_datetime(demand_df['start_time'])
-    dt_15=[]
-    for dt in demand_df['dt']:
-        # Replace each dt value (start_time) with the time in current 15 minute chunk of the hour
-        # (e.g. 22:39 -> 22:30 as it's past 22:30 but before 22:45)
-        dt_aux = str(dt.replace(minute=int(dt.minute/15)*15,second = 0).replace(tzinfo=utc)).split(' ')[1].split('+')[0][:-3]
-        dt_15.append(dt_aux)
+    demand_df = df.copy()
+    demand_df['start_time'] = demand_df['start_time'].apply(lambda x: str(x.replace(minute=int(x.minute/15)*15,second = 0)))
+    demand_df = demand_df.groupby(['CentroidID_D', 'CentroidID_O', 'start_time']).size().reset_index(name='counts')
+    demand_df.rename(columns={"start_time": "dt_15"},inplace=True)
+    return demand_df
 
-    demand_df['dt_15'] = dt_15
-    grouped_od_demand_15min = demand_df.groupby(['CentroidID_D', 'CentroidID_O', 'dt_15']).size().reset_index(name='counts')
-    
-    return grouped_od_demand_15min
-
-from pathlib import Path
-import numpy as np
 
 def export_all_demand_between_centroids(concatenated_matrices, output):
     """
@@ -707,9 +725,16 @@ def process_SFCTA_data(int_int_path, int_ext_path, ext_int_path, output_taz, out
     This method performs all processing steps on SFCTA data. Loads trips (given by int_int_path, int_ext_path, 
     ext_int_path) into a dataframe, merges appropriate TAZs, and exports grouped demand in an Aimsun-friednly format at 
     output_int_demand_path.
+    
+    @param int_int_path:          To do
     """
     print("Loading SFCTA trips...")
     internal_trips = get_sfcta_dataframe(int_int_path, int_ext_path, ext_int_path)
+    print(str(internal_trips.leg_id.count()) + " trips")
+    
+    ## Depending on the data, the time might need to be shifted
+    print("Shifting time...")
+    shift_time(internal_trips, 'start_time', 0)
 
     print("Loading TAZs...")
     # Merging internal and external TAZs
@@ -718,10 +743,12 @@ def process_SFCTA_data(int_int_path, int_ext_path, ext_int_path, output_taz, out
 
     print("Joining SFCTA trips on TAZs...")
     internal_trips_end = join_taz_on_sfcta_data(internal_trips, tazs)
+    print(str(internal_trips_end.leg_id.count()) + " trips")
 
     print("Grouping demand per 15 minutes time step...")
     grouped_od_demand_15min = cluster_demand_15min(internal_trips_end)
-
+    print(str(grouped_od_demand_15min.counts.sum()) + " trips")
+    
     print("Exporting SFCTA demand with format for Aimsun...")
     export_all_demand_between_centroids(grouped_od_demand_15min, output_int_demand_path)
     print("Processing of SFCTA data finished. The output files are located in " + output_int_demand_path)
@@ -738,8 +765,8 @@ def get_external_demand_streetlight(streetlight_path, flow_path, output_ext_dema
     flow_pems = pd.read_csv(flow_path)
 
     # extract flow for the pems detector and compute the distribution
-    flow_nb = flow_pems[flow_pems['Detector_Id']==pems_nb_id].loc[:, '14:0': '20:0']
-    flow_sb = flow_pems[flow_pems['Detector_Id']==pems_sb_id].loc[:, '14:0': '20:0']
+    flow_nb = flow_pems[flow_pems['Detector_Id']==pems_nb_id].loc[:, '14:00': '20:00']
+    flow_sb = flow_pems[flow_pems['Detector_Id']==pems_sb_id].loc[:, '14:00': '20:00']
     flow_nb_percent = flow_nb / int(flow_nb.sum(axis=1))
     flow_sb_percent = flow_sb / int(flow_sb.sum(axis=1))
 
@@ -765,3 +792,383 @@ def get_external_demand_streetlight(streetlight_path, flow_path, output_ext_dema
     ext_ext_OD['counts'] = ext_ext_OD['counts'].astype(int)
 
     export_all_demand_between_centroids(ext_ext_OD, output_ext_demand_path)
+
+def create_shp_file_by_changing_speeds_of_roads(dir_sections, dir_output):
+    """
+    @todo This is not done since Google Maps API needs a Asset Tracking license for access
+    Creates new shp file by copying the contents of sections.shp file contained in dir_sections.
+     The new shp file has new speed limits obtained from Google Maps API. We only keep major roads,
+     highways and on/off ramps. Major roads are found by roads having names in sections.shp and highways
+     and on/off-ramps are found by having a speed limit >= 100 km/hr
+
+     @param dir_sections    folder containing sections.shp
+     @param dir_output      folder writing the new shp file
+    """
+    api_key = None
+    shape_file = os.path.join(dir_sections, 'sections.shp')
+    output_file = os.path.join(dir_output, 'sections_updated_speeds.shp')
+    with fiona.collection(shape_file, 'r') as input:
+        schema = input.schema.copy()
+        with fiona.collection(output_file, 'w', 'ESRI Shapefile', schema, crs=input.crs) as output:
+            for row in input:
+                # create copy of row to avoid segmentation error (we will write to copy and save it)
+                row_copy = row.copy()
+                # get name and speed of road,
+                # we will use to determine if road is a Major road or Highway and on/off ramp
+                road_name = row['properties']['name']
+                speed = row['properties']['speed']
+                # print('Name: ', road_name, 'speed', speed)
+
+                # todo use Google API to get speed limits on desired roads and save them to output
+
+                # if its a Major road or # highway or on/off ramp
+                if road_name or speed >= 100:
+                    row_copy['properties']['speed'] = None  # speed by google api speed
+                    output.write(row_copy)
+
+
+    pass
+
+project_delimitation = []
+project_delimitation.append((-121.94277062699996, 37.55273259000006))
+project_delimitation.append((-121.94099807399999, 37.554268507000074))
+project_delimitation.append((-121.91790942699998, 37.549823434000075))
+project_delimitation.append((-121.89348666299998, 37.52770136500004, ))
+project_delimitation.append((-121.90056572499998, 37.52292299800007))
+project_delimitation.append((-121.90817571699995, 37.52416183400004))
+project_delimitation.append((-121.91252749099999, 37.51845069500007))
+project_delimitation.append((-121.91349347899995, 37.513972023000065))
+project_delimitation.append((-121.90855417099999, 37.503837324000074))
+project_delimitation.append((-121.91358547299996, 37.50097863000008))
+project_delimitation.append((-121.90798018999999, 37.49080413200005))
+project_delimitation.append((-121.91894942199997, 37.48791568200005))
+project_delimitation.append((-121.92029048799998, 37.488706567000065))
+project_delimitation.append((-121.93070953799997, 37.48509600500006))
+project_delimitation.append((-121.93254686299997, 37.48864173700008))
+project_delimitation.append((-121.94079404499996, 37.50416395900004))
+project_delimitation.append((-121.94569804899999, 37.51332606200003))
+project_delimitation.append((-121.94918207899997, 37.520371545000046))
+project_delimitation.append((-121.95305006999996, 37.52804520800004))
+project_delimitation.append((-121.953966735, 37.53272020000003))
+project_delimitation.append((-121.95428756799998, 37.53817435800005))
+project_delimitation.append((-121.95506236799997, 37.54107322100003))
+project_delimitation.append((-121.95676186899999, 37.54656695700004))
+project_delimitation.append((-121.95529950799994, 37.54980786700003))
+project_delimitation.append((-121.95261192399994, 37.550479763000055))
+project_delimitation.append((-121.94988481799999, 37.55277211300006))
+project_delimitation.append((-121.94613010599994, 37.55466923100005))
+project_delimitation.append((-121.94277062699996, 37.55273259000006))
+
+
+def create_external_taz(dir_taz, sections_df, output_dir=None):
+    """
+    3 Steps for Create external TAZs
+    1. Create a external demand delimitation:
+    - load SFCTA data as Geopandas point (one point = one origin or one destination)
+    - Get convex hull of the point
+    - Use the convex hull (+ buffer) as the external demand delimitation
+    2. create external centroids:
+    - select road with no fnode and capacity above 800 from sections_df
+    - create a point at the end of all selected road
+    - plot the points, get a list of points to remove visually
+    3. create external TAZs:
+    - create a mesh a points inside the external demand delimitation and outside the internal demand delimitation (project delimitation)
+    - use a Direction API (maybe Here direction):
+    for every mesh point:
+        Query path from mesh point to center of the project area
+        Find the closest external centroid to the path. Test that all paths are not to far from existing
+            external centroid --> if not, we might be missing one external centroid.
+        Associate the external centroid to the mesh point.
+        create external TAZ from mesh of points (if you reach point, Theo has already done it for internal TAZs)
+
+    @param dir_taz:         folder containing prefix_fremont_legs.csv where prefix=ending, internal and starting
+    @param sections_df:     geo pandas data frame of the aimsun sections
+    """
+    # 1. Create a external demand delimitation:
+    # load the 3 csv files
+    ending_csv = pd.read_csv(os.path.join(dir_taz, "ending_fremont_legs.csv"))
+    internal_csv = pd.read_csv(os.path.join(dir_taz, "internal_fremont_legs.csv"))
+    starting_csv = pd.read_csv(os.path.join(dir_taz, "starting_fremont_legs.csv"))
+
+    # get the points from the csv's (start and end points)
+    def get_points(csv_df):
+        all_points = []
+        node_types = ['start', 'end']
+        for node_type in node_types:
+            points = list(zip(csv_df[node_type + '_node_lng'], csv_df[node_type + '_node_lat']))
+            all_points.extend(points)
+        return all_points
+
+    points = []
+    points.extend(get_points(ending_csv))
+    points.extend(get_points(internal_csv))
+    points.extend(get_points(starting_csv))
+    points = np.array(points)
+
+    # get convex hull of points
+    hull = ConvexHull(points)
+    hull_points = points[hull.vertices, :]
+
+    # add buffer to convex hull
+    def normalize(point):
+        norm = np.linalg.norm(point)
+        return point / norm if norm > 0 else point
+
+    # for each point calculate the direction to expand for buffer
+    buffer_directions = []
+    for i in range(len(hull_points)):
+        point = hull_points[i]
+        left_neighbor = hull_points[(i-1) % len(hull_points)]
+        right_neighbor = hull_points[(i+1) % len(hull_points)]
+        left_arrow = point - left_neighbor
+        right_arrow = point - right_neighbor
+        left_arrow = normalize(left_arrow)
+        right_arrow = normalize(right_arrow)
+        buffer_directions.append(normalize(left_arrow + right_arrow))
+    buffer_directions = np.array(buffer_directions)
+
+    # calculate the new (expanded) hull points with buffer
+    buffer_coefficient = .05
+    expanded_hull_points = hull_points + buffer_coefficient * buffer_directions
+
+    # 2. create external centroids:
+    # select roads with no fnode and capacity above 800 from sections_df
+    sections_df = sections_df[pd.isnull(sections_df['fnode']) & (sections_df['capacity'] > 800)]
+    sections_df = sections_df[['eid', 'geometry']]
+
+    # filter out roads that are visually erroneous -> a road not entering the project area (Fremont)
+    # sections_df.to_csv('selected_roads.csv')   # roads to obtained visually
+    roads_to_remove = [56744, 30676, 35572, 56534]
+    sections_df = sections_df.astype({'eid': 'int32'})
+    sections_df = sections_df[~sections_df['eid'].isin(roads_to_remove)]
+
+    # create external centroid nodes -> create a point at the terminal end of these roads
+    # that is, for each road find the end of the road that is closer to the external delimitation (convex hull)
+    external_centroid_nodes = []
+    internal_centroid_nodes = []  # need later to compute center point of project area
+    circle = np.concatenate((expanded_hull_points, expanded_hull_points[0][None, :]), axis=0)
+    external_delimitation = LineString(circle)
+    for road in sections_df['geometry']:
+        start_point = Point(road.coords[0])
+        end_point = Point(road.coords[-1])
+
+        if external_delimitation.distance(start_point) < external_delimitation.distance(end_point):
+            # start is external centroid
+            external_centroid_nodes.append(start_point)
+            internal_centroid_nodes.append(end_point)
+        else:
+            # end is external centroid
+            external_centroid_nodes.append(end_point)
+            internal_centroid_nodes.append(start_point)
+
+    # 3. create external TAZs:
+    # create mesh of points
+    mesh_density = 0.001  # should be 0.001 (creates 2 million points)
+    x_min, x_max = np.min(expanded_hull_points[:, 0]), np.max(expanded_hull_points[:, 0])
+    y_min, y_max = np.min(expanded_hull_points[:, 1]), np.max(expanded_hull_points[:, 1])
+    x, y = np.meshgrid(np.arange(x_min, x_max, mesh_density), np.arange(y_min, y_max, mesh_density))
+    x = x.reshape(x.shape[0] * x.shape[1])
+    y = y.reshape(y.shape[0] * y.shape[1])
+    mesh_points = list(zip(x, y))
+    print('created {} mesh points'.format(len(mesh_points)))
+    x = y = points = None  # free up memory
+
+    # keep those inside external delimitation and outside project delimitation
+    external_delimitation_poly = Polygon(expanded_hull_points)
+    project_delimitation_poly = Polygon(project_delimitation)
+    external_minus_project = external_delimitation_poly.difference(project_delimitation_poly)
+    # bottleneck (iterating over points and using contains method is slow)
+    mesh_points = list(filter(lambda p: external_minus_project.contains(p), MultiPoint(mesh_points)))
+    print('kept {} mesh points'.format(len(mesh_points)))
+
+    # compute center of project area
+    internal_centroid_nodes = np.array([(p.x, p.y) for p in internal_centroid_nodes])
+    project_center = np.mean(internal_centroid_nodes, axis=0)
+    project_center = Point(project_center[0], project_center[1])
+
+    # for each mesh point find closest external centroid to its query path
+    project_delimitation_line = LineString(project_delimitation + [project_delimitation[0]])
+
+    testing = True
+    sample_size = 500
+    info_point_to_center = []  # desired result
+    intersection_to_centroid_paths = []
+
+    # for testing sample mesh points at random and run them
+    if testing:
+        mesh_points = random.sample(mesh_points, sample_size)
+
+    distance_to_centroid_threshold = 0.005
+    for point in mesh_points:
+        path = get_path_by_here_api(point, project_center, stop_on_error=False)
+        if not path:
+            # not path found, ie. start is body of water hence no car path to destination
+            # from sample testing, Google API takes this into account but not Here API
+            continue  # next mesh point
+
+        # find intersection (point) of path and project delimitation
+        path = LineString(path)
+        intersect_point = project_delimitation_line.intersection(path)
+        if not isinstance(intersect_point, Point):
+            # usually API error, ie. start is body of water, path includes a segment that jumps from water
+            # to fremont intersecting project delimitation multiple times
+            continue  # next mesh point
+
+        # find closest centroid to intersection point
+        min_distance = 999999
+        closest_centroid = None
+        for centroid in external_centroid_nodes:
+            dist = intersect_point.distance(centroid)
+            if dist < min_distance:
+                min_distance = dist
+                closest_centroid = centroid
+
+        if min_distance < distance_to_centroid_threshold:
+            # path intersection to centroid
+            intersection_to_centroid = [(intersect_point.x, intersect_point.y), (closest_centroid.x, closest_centroid.y)]
+            intersection_to_centroid_paths.append(LineString(intersection_to_centroid))
+
+            # write result to csv
+            info_point_to_center.append([point, project_center, closest_centroid, min_distance, path])
+
+    if testing:
+        kepler_map = KeplerGl(height=600)
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [project_center]}, crs='epsg:4326'), name='project_center')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': external_centroid_nodes}, crs='epsg:4326'), name='external_centroids')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [project_delimitation_line]}, crs='epsg:4326'), name='project_delimitation')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [external_delimitation]}, crs='epsg:4326'), name='external_delimitation')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': mesh_points}, crs='epsg:4326'), name='mesh_points')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': [l[-1] for l in info_point_to_center]}, crs='epsg:4326'), name='paths')
+        kepler_map.add_data(data=gpd.GeoDataFrame({'geometry': intersection_to_centroid_paths}, crs='epsg:4326'), name='intersection_to_centroid_paths')
+        file_path = 'mesh_points_to_external_centroids.html'
+        if output_dir:
+            file_path = os.path.join(output_dir, file_path)
+        kepler_map.save_to_html(file_name=file_path)
+
+
+    def to_csv(file_name, header, lines):
+        def add_quotes(val):
+            return "\"" + str(val) + "\"" if ',' in str(val) else str(val)
+
+        csv = open(file_name, 'w')
+        csv.write(header + '\n')
+        for line in lines:
+            csv.write(','.join(map(add_quotes, line)) + '\n')
+
+    # write results to csv
+    mesh_points_to_centroid_file_path = 'mesh_point_to_centroid.csv'
+    if output_dir:
+        mesh_points_to_centroid_file_path = os.path.join(output_dir, mesh_points_to_centroid_file_path)
+    to_csv(mesh_points_to_centroid_file_path,
+           'origin_mesh_point,destination,closest_external_centroid,distance_to_centroid,path',
+           info_point_to_center)
+
+
+def get_path_by_here_api(start, end, stop_on_error=False):
+    """
+    Using Here API to get smooth path from start to end location
+    where start and end are Point objects
+    """
+    here_url = 'https://route.ls.hereapi.com/routing/7.2/calculateroute.json?'
+    api_key = 'QxZ6oy17gjoSHXxI9smn8THEzA1KA5pe7cveWt_k4hM'
+
+    # convention on .shp files and kepler are lng, lat
+    # Here API convention is lat, lng
+    start_pos = 'geo!{},{}'.format(start.y, start.x)
+    end_pos = 'geo!{},{}'.format(end.y, end.x)
+    params = {'apiKey': api_key,
+              'mode': 'fastest;car;traffic:disabled',
+              'representation': 'display',
+              'waypoint0': start_pos,
+              'waypoint1': end_pos}
+
+    response = requests.get(here_url, params=params)
+    if response.ok:
+        body = response.json()
+        route = body['response']['route']
+        if route:
+            points = []
+            points.append((start.x, start.y))
+            maneuver = route[0]['leg'][0]['maneuver']
+            for m in maneuver:
+                path = m['shape']
+                for p in path:
+                    lat_lng = p.split(',')
+                    lat = float(lat_lng[0])
+                    lng = float(lat_lng[1])
+                    # keep .shp file convention, lng, lat
+                    points.append((lng, lat))
+            points.append((end.x, end.y))
+            return points
+        else:
+            if stop_on_error:
+                stop_code('no routes found for start={}, destination={}'.format(start, end))
+            return None
+    else:
+        if stop_on_error:
+            response.raise_for_status()
+        # Here API throws an error on some bodies of water, keep going if stop on error is false
+        return None
+        # print('response={}'.format(response))
+        # print('start={}, destination={}'.format(start_pos, end_pos))
+
+# legacy code method, used to get path from start to end via Google API
+def get_path_by_google_api(start_point, end_point, stop_on_error=False):
+    api_key = None  # removing api key from pushing to github
+    google_url = "https://maps.googleapis.com/maps/api/directions/json"
+
+    # convention on shp files for a geo-point is lng,lat
+    # google api takes lat,lng
+    origin = "{},{}".format(start_point.y, start_point.x)
+    destination = "{},{}".format(end_point.y, end_point.x)
+    params = {
+        'origin': origin,
+        'destination': destination,
+        'key': api_key
+    }
+    response = requests.get(google_url, params=params)
+    if response.ok:
+        body = response.json()
+        # print(body)
+        routes = body['routes']
+        if routes:
+            # reminder, don't use legs, is not a smooth path from origin to destination
+            # legs = routes[0]['legs'][0]['steps']
+            encoded_points = routes[0]['overview_polyline']['points']
+            points = polyline.decode(encoded_points)
+            # keep lng,lat convention
+            for i in range(len(points)):
+                points[i] = points[i][::-1]
+            return points
+        else:
+            if stop_on_error:
+                stop_code('no routes found for start={}, destination={}'.format(origin, destination))
+            return None  # no routes found
+    else:
+        # request produced an error, we should stop code completely, likely that other requests will fail
+        print('response={}'.format(response))
+        print('start={}, destination={}'.format(origin, destination))
+        response.raise_for_status()
+
+
+def test_create_external_taz():
+    data_path = "/Users/edson/Dropbox/Private Structured data collection"
+    sfcta_folder = os.path.join(data_path, "Data processing", "Raw", "Demand", "OD demand", "SFCTA demand data")
+    sections_path = os.path.join(data_path, "Aimsun", "Inputs", "sections.shp")
+    sections_df = gpd.GeoDataFrame.from_file(sections_path)
+    sections_df = sections_df.to_crs(epsg=4326)
+    sections_df = sections_df.set_geometry('geometry')
+    output_dir = os.path.join(data_path, 'Data processing', 'Kepler maps', 'HereAPI')
+    create_external_taz(sfcta_folder, sections_df, output_dir)
+    pass
+
+
+def stop_code(msg=None):
+    if msg:
+        raise (ValueError(msg))
+    else:
+        raise(ValueError('User stopped code'))
+
+
+if __name__ == '__main__':
+    test_create_external_taz()
