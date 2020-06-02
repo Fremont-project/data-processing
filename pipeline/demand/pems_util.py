@@ -471,44 +471,6 @@ class StationRawDataHandler(DataSourceHandler):
             return None
 
 
-class OneStationRawDataHandler(StationRawDataHandler):
-
-    def __init__(self, **kwargs):
-        self.station_id = kwargs['station_id']
-        super().__init__(**kwargs)
-
-    def _load_file(self, file_or_buffer):
-        try:
-            if isinstance(file_or_buffer, io.BytesIO):
-                file_or_buffer.seek(0)
-
-            station_id = bytes(str(self.station_id), 'utf-8')
-            result = []
-            with gzip.open(file_or_buffer) as f:
-                for line in f:
-                    if line.split(b',')[1] == station_id:
-                        result.append(line)
-
-            if len(result) < 1:
-                logger.error(f"The data chunk does not contain data about the specified station_id: {self.station_id}")
-                return None
-            df = pd.read_csv(io.BytesIO(b''.join(result)), header=None, index_col=False, parse_dates=[0],
-                             infer_datetime_format=True)
-            new_column = ['timestamp', 'station_id']
-            for i in range(0, int((len(df.columns) - 2) / 3)):
-                new_column += [
-                    'lane_{}_flow'.format(i),
-                    'lane_{}_occupancy'.format(i),
-                    'lane_{}_speed'.format(i),
-                ]
-            df.columns = new_column
-            return df
-
-        except zipfile.BadZipFile as err:
-            logger.error("The data chunk cannot be unzipped. Error message: {}".format(err.args[0]))
-            return None
-
-
 class StationMetaDataHandler(DataSourceHandler):
 
     @property
@@ -544,46 +506,7 @@ class StationMetaDataHandler(DataSourceHandler):
         except zipfile.BadZipFile:
             logger.error("The data chunk cannot be unzipped.")
             return None
-
-
-class CHPDailyIncidentDataHandler(DataSourceHandler):
-
-    @property
-    def name(self) -> str:
-        return "chp_incidents_day"
-
-    def _chunk_dates(self, from_datetime: date, to_datetime: date) -> Generator[date, Any, None]:
-        return date_range(from_datetime, to_datetime)
-
-    def _url_parser(self, url_list, district):
-        processed_urls = {}
-        for monthly_data in url_list.items():
-            for recorded_day in monthly_data[1]:
-                recorded_date = filename_to_date_1(recorded_day["file_name"])
-                processed_urls["{}_{}_{}".format(self.name, recorded_date, district)] = recorded_day["url"]
-        return processed_urls
-
-    def _load_file(self, file_or_buffer) -> pd.DataFrame:
-        try:
-            if isinstance(file_or_buffer, io.BytesIO):
-                file_or_buffer.seek(0)
-            zip_files = zipfile.ZipFile(file_or_buffer)
-            zip_names = pd.Series(zip_files.namelist())
-            zip_content = zip_files.read(list(zip_names[np.logical_not(zip_names.str.contains("det", regex=False))])[0])
-
-            header = ['incident_id', 'cc_code', 'incident_nmbr', 'timestamp', 'description', 'location',
-                      'area',
-                      'zoom_map', 'tb_xy', 'latitude', 'longitude', 'district', 'county_fips_id',
-                      'city_fips_id',
-                      'freeway_nmbr', 'freeway_direction', 'state_postmile', 'duration', 'severity']
-
-            df = pd.read_csv(io.BytesIO(zip_content), header=None, index_col=False, parse_dates=['timestamp'], names=header, compression='gzip')
-            return df
-
-        except zipfile.BadZipFile:
-            logger.error("The data chunk cannot be unzipped.")
-            return None
-
+        
 
 class Station5MinDataHandler(DataSourceHandler):
 
@@ -668,44 +591,3 @@ class StationHourDataHandler(DataSourceHandler):
     @property
     def name(self) -> str:
         return 'station_hour'
-
-
-class OneStation5MinDataHandler(Station5MinDataHandler):
-
-    def __init__(self, **kwargs):
-        self.station_id = kwargs['station_id']
-        super().__init__(**kwargs)
-
-    def _load_file(self, file_or_buffer):
-        try:
-            if isinstance(file_or_buffer, io.BytesIO):
-                file_or_buffer.seek(0)
-
-            station_id = bytes(str(self.station_id), 'utf-8')
-            result = []
-            with gzip.open(file_or_buffer) as f:
-                for line in f:
-                    if line.split(b',')[1] == station_id:
-                        result.append(line)
-
-            if len(result) < 1:
-                logger.error(f"The data chunk does not contain data about the specified station_id: {self.station_id}")
-                return None
-            df = pd.read_csv(io.BytesIO(b''.join(result)), header=None, index_col=False, parse_dates=[0],
-                             infer_datetime_format=True)
-            new_column = ['timestamp', 'station_id', 'district', 'fwy_no', 'dir', 'lane_type', 'station_length',
-                          'sample_no', 'obs_percentage', 'total_flow', 'avg_occupancy', 'avg_speed']
-            for i in range(0, int((len(df.columns) - 12) / 5)):
-                new_column += [
-                    f'lane_{i}_samples',
-                    f'lane_{i}_flow',
-                    f'lane_{i}_avg_occ',
-                    f'lane_{i}_avg_speed',
-                    f'lane_{i}_observed'
-                ]
-            df.columns = new_column
-            return df
-
-        except zipfile.BadZipFile as err:
-            logger.error("The data chunk cannot be unzipped. Error message: {}".format(err.args[0]))
-            return None
