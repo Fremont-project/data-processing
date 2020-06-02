@@ -1,4 +1,5 @@
-# Credits: Code modified heavily from GitLab contributor Attila (https://gitlab.medianets.hu/anagy)
+# Credits: Code adapted and heavily modified from that of Attila Nagy, PhD Student at Budapest University of Technology and Economics (https://gitlab.medianets.hu/anagy)
+
 import os
 import io
 import abc
