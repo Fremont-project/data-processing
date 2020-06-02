@@ -41,9 +41,11 @@ def filename_to_date_1(filename: str):
     parts = filename.split('.')[0].split('_')[-3:]
     return date(int(parts[0]), int(parts[1]), int(parts[2]))
 
+
 def filename_to_date_2(filename: str):
     parts = filename.split('.')[0].split('_')[-3:]
     return date(int(parts[1]), int(parts[2]), 1)
+
 
 def get_caltrans_districts(caltrans_shapefile):
     return gpd.read_file(caltrans_shapefile)
