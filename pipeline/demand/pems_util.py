@@ -89,12 +89,18 @@ def fetch_pems_from_polygon(polygon, start_date, end_date, caltrans_shapefile, m
     
     polygon_districts_data = fetch_pems_from_ctdistricts(polygon_districts, start_date, end_date, mode)
     
+    if mode == "meta":
+        polygon_districts_data = polygon_districts_data.rename(columns={'id': 'station_id'})
+    
     polygon_districts_metadata = fetch_pems_from_ctdistricts(polygon_districts, start_date, end_date, "meta")
     polygon_districts_metadata = polygon_districts_metadata.rename(columns={'id': 'station_id'})
-    polygon_districts_metadata = gpd.GeoDataFrame(polygon_districts_metadata, geometry=gpd.points_from_xy(polygon_districts_metadata['longitude'], polygon_districts_metadata['latitude']))
+    polygon_districts_metadata = gpd.GeoDataFrame(polygon_districts_metadata,\
+                                                  geometry=gpd.points_from_xy(polygon_districts_metadata['longitude'],\
+                                                                              polygon_districts_metadata['latitude']))
     
     print("Cleaning data...")
     polygon_districts_data_merged = polygon_districts_metadata.merge(polygon_districts_data, on = ['station_id'])
+    del polygon_districts_data, polygon_districts_metadata
     
     print("Filtering data...")
     polygon_data = polygon_districts_data_merged[polygon_districts_data_merged['geometry'].within(polygon)].reset_index()
