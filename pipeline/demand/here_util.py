@@ -7,7 +7,7 @@ def shortest_path_by_travel_time(start, end, stop_on_error=False):
     where start and end are Point objects
     """
     here_url = 'https://route.ls.hereapi.com/routing/7.2/calculateroute.json?'
-    api_key = '0tEyB2hXkoJNHxI00G5U2M_KIcioZ6Z6ZnI9_HtjAek'
+    api_key = 'api_key'
 
     # convention on .shp files and kepler are lng, lat
     # Here API convention is lat, lng
